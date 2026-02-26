@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import json
 import googleapiclient.discovery
 from google.oauth2.credentials import Credentials
@@ -9,8 +7,9 @@ PROJECT_ID = "1031179907628"
 TOKEN_JSON_SECRET = "youtube-processing-web-client-token-json" 
 CLIENT_ID_STRING_SECRET = "youtube-processing-client-id-web-app"
 CLIENT_SECRET_STRING_SECRET = "youtube-processing-client-secret-web-app"
+CHANNEL_ID = "youtube_channel_id"
 
-CHANNEL_ID = "UCSNK6abAoM6Kj0SkHOStNLg"
+METRICS = "engagedViews,views,estimatedMinutesWatched,likes,subscribersGained,subscribersLost,shares,comments,averageViewDuration,averageViewPercentage" 
 
 def get_gcp_secret(secret_name, project_id=PROJECT_ID):
     client = secretmanager.SecretManagerServiceClient()
@@ -34,27 +33,44 @@ def get_authenticated_service():
         scopes=["https://www.googleapis.com/auth/yt-analytics.readonly"]
     )
 
-    return googleapiclient.discovery.build("youtubeAnalytics", "v2", credentials=credentials)
+    return googleapiclient.discovery.build("youtube", "v3", credentials=credentials)
+
+def create_table(table, headers=None):
+    if headers:
+        headstring = "\t{}\t" * len(headers)
+        print(headstring.format(*headers))
+    
+    rowstring = "\t{}\t" * len(table[0])
+    for row in table:
+        print(rowstring.format(*row))
+
+def search_result(query):
+    # Define the report query, this is just an example https://googleapis.github.io/google-api-python-client/docs/dyn/youtube_v3.search.html 
+    request = youtube_analytics.search.list(
+        ids=f"channel=={get_gcp_secret(CHANNEL_ID)}",
+        startDate="2025-01-01",
+        endDate="2025-01-10",
+        metrics=METRICS,
+        dimensions="day",
+        sort="day",
+    )
+    response = request.execute()
+
+
+
 
 def main():
     try:
         youtube_analytics = get_authenticated_service()
+        response = search_result("example search query")
 
-        # Define the report query
-        request = youtube_analytics.reports().query(
-            ids=f"channel=={CHANNEL_ID}",
-            startDate="2012-01-01",
-            endDate="2012-01-01",
-            metrics="estimatedMinutesWatched,views,likes,subscribersGained",
-            dimensions="day",
-            sort="day",
-        )
+        # Define the report query, this is just an example https://googleapis.github.io/google-api-python-client/docs/dyn/youtube_v3.search.html 
 
-        # .execute() handles the 401/refresh logic automatically!
-        response = request.execute()
+        headers = METRICS.split(",")
+        create_table(response.get("rows", []), headers=headers)
 
         print("Successfully retrieved Analytics data:")
-        print(json.dumps(response, indent=2))
+
 
     except Exception as e:
         print(f"An error occurred: {e}")
