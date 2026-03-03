@@ -1,59 +1,332 @@
 # -*- coding: utf-8 -*-
 
 import json
+import os
+import re
 import googleapiclient.discovery
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from google.cloud import secretmanager
 import pprint
 from datetime import date, timedelta, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import pyarrow as pa
+import pyarrow.bigquery as pa_bq
+from google.cloud import bigquery
 
-PROJECT_ID = "1031179907628"
-TOKEN_JSON_SECRET = "youtube-processing-web-client-token-json" 
+PROJECT_ID = "gds-social-data"
+
 CLIENT_ID_STRING_SECRET = "youtube-processing-client-id-web-app"
 CLIENT_SECRET_STRING_SECRET = "youtube-processing-client-secret-web-app"
 CHANNEL_ID = "UCSNK6abAoM6Kj0SkHOStNLg"
+TOKEN_SECRET_VERSION= "5"  # 1 or "latest"
+TOKEN_JSON_SECRET = "youtube-processing-web-client-token-json"
+TOKEN_CACHE_PATH = os.path.expanduser("~/.config/youtube_exploration/token_cache.json")
 
 # METRICS = ["engagedViews","views","estimatedMinutesWatched","likes","subscribersGained","subscribersLost","shares","comments","averageViewDuration","averageViewPercentage"]
 METRICS= ["views"]
 # DIMENSIONS = ["day", "gender","deviceType","video","ageGroup"]
 DIMENSIONS = ["video"]
 
+# by day 
+top_200_videos_for_date_range_config = {
+    "dimensions":"video",
+    "metrics"   :"views",
+    "maxResults":200,
+    "sort":"-views"  
+}
 
-def get_gcp_secret(secret_name, project_id=PROJECT_ID):
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
-    payload = client.access_secret_version(request={"name": name}).payload.data.decode("utf-8")
-    return payload
+user_activity_single_video_single_day_config = {
+    "dimensions":"day,creatorContentType",
+    "metrics":"engagedViews,views,redViews,comments,likes,dislikes,shares,estimatedMinutesWatched,estimatedRedMinutesWatched,averageViewDuration,averageViewPercentage,annotationClickThroughRate,annotationCloseRate,annotationImpressions,annotationClickableImpressions,annotationClosableImpressions,annotationClicks,annotationCloses,cardClickRate,cardTeaserClickRate,cardImpressions,cardTeaserImpressions,cardClicks,cardTeaserClicks",
+    "maxResults":200,
+    "sort":"-views"
+}
 
-def get_authenticated_service():
+playback_details_single_video_single_day_config = {
+    "dimensions":"day",
+    "metrics"   :"engagedViews, views, redViews, comments, likes, dislikes, videosAddedToPlaylists, videosRemovedFromPlaylists, shares, estimatedMinutesWatched, estimatedRedMinutesWatched, averageViewDuration, averageViewPercentage, annotationClickThroughRate, annotationCloseRate, annotationImpressions, annotationClickableImpressions, annotationClosableImpressions, annotationClicks, annotationCloses, cardClickRate, cardTeaserClickRate, cardImpressions, cardTeaserImpressions, cardClicks, cardTeaserClicks, videoThumbnailImpressions, videoThumbnailImpressionsClickRate, subscribersGained, subscribersLost, uniques",
+    "maxResults":200,
+    "sort":"-views"  
 
-    token_info = json.loads(get_gcp_secret(TOKEN_JSON_SECRET))
-    client_id = get_gcp_secret(CLIENT_ID_STRING_SECRET)
-    client_secret = get_gcp_secret(CLIENT_SECRET_STRING_SECRET)
+}
 
-    # Build the Credentials object which refreshest itself using the client_id/secret
+#placeholder
+playback_locations_single_video_single_day = {
+    "dimensions":"day",
+    "metrics":"engagedViews,views,redViews,comments,likes,dislikes,shares,estimatedMinutesWatched,estimatedRedMinutesWatched,averageViewDuration,averageViewPercentage,annotationClickThroughRate,annotationCloseRate,annotationImpressions,annotationClickableImpressions,annotationClosableImpressions,annotationClicks,annotationCloses,cardClickRate,cardTeaserClickRate,cardImpressions,cardTeaserImpressions,cardClicks,cardTeaserClicks",
+    "maxResults":200,
+}
+
+
+traffic_sources_single_video_single_day = {
+}
+
+traffic_sources_single_video_single_day = {
+}
+
+## not by day 
+single_video_traffic_source_details={
+
+}
+
+VIDEO_ID_BQ_SCHEMA = {
+    "video_id":                         pa.string(),
+    "video_title":                      pa.string(),
+}
+
+VIDEO_METADATA_BQ_SCHEMA = {
+    "video_id":                         pa.string(),
+    "title":                            pa.string(),
+    "publishedAt":                      pa.string(),
+    "description":                      pa.string(),
+    "tags":                             pa.list_(pa.string()),
+    "categoryId":                       pa.string(),
+    "categoryTitle":                    pa.string(),
+    "channelTitle":                     pa.string(),
+    "channelId":                        pa.string(),
+    "defaultLanguage":                  pa.string(),
+    "defaultAudioLanguage":             pa.string(),
+    "duration":                         pa.string(),
+    "duration_in_seconds":              pa.int64(),
+    "definition":                       pa.string(),
+    "caption":                          pa.string(),
+    "regionRestriction_allowed":        pa.list_(pa.string()),
+    "regionRestriction_blocked":        pa.list_(pa.string()),
+    "viewCount":                        pa.int64(),
+    "likeCount":                        pa.int64(),
+    "commentCount":                     pa.int64(),
+    "favoriteCount":                    pa.int64(),
+    "privacyStatus":                    pa.string(),
+    "madeForKids":                      pa.bool_(),
+    "embeddable":                       pa.bool_(),
+}
+
+USER_ACTIVITY_BQ_SCHEMA = {
+    "day":                              pa.date32(),
+    "engagedViews":                     pa.int64(),
+    "views":                            pa.int64(),
+    "redViews":                         pa.int64(),
+    "comments":                         pa.int64(),
+    "likes":                            pa.int64(),
+    "dislikes":                         pa.int64(),
+    "shares":                           pa.int64(),
+    "estimatedMinutesWatched":          pa.float64(),
+    "estimatedRedMinutesWatched":       pa.float64(),
+    "averageViewDuration":              pa.float64(),
+    "averageViewPercentage":            pa.float64(),
+    "annotationClickThroughRate":       pa.float64(),
+    "annotationCloseRate":              pa.float64(),
+    "annotationImpressions":            pa.int64(),
+    "annotationClickableImpressions":   pa.int64(),
+    "annotationClosableImpressions":    pa.int64(),
+    "annotationClicks":                 pa.int64(),
+    "annotationCloses":                 pa.int64(),
+    "cardClickRate":                    pa.float64(),
+    "cardTeaserClickRate":              pa.float64(),
+    "cardImpressions":                  pa.int64(),
+    "cardTeaserImpressions":            pa.int64(),
+    "cardClicks":                       pa.int64(),
+    "cardTeaserClicks":                 pa.int64(),
+}
+# generated using GB region code + snippet https://developers.google.com/youtube/v3/docs/videoCategories/list
+def convert_category_id_to_title(category_id:int) -> str:
+    """Convert YouTube video category ID to human-readable title"""
+    video_category_id = {
+        "1":  "Film & Animation",
+        "2":  "Autos & Vehicles",
+        "10": "Music",
+        "15": "Pets & Animals",
+        "17": "Sports",
+        "18": "Short Movies",
+        "19": "Travel & Events",
+        "20": "Gaming",
+        "21": "Videoblogging",
+        "22": "People & Blogs",
+        "23": "Comedy",
+        "24": "Entertainment",
+        "25": "News & Politics",
+        "26": "Howto & Style",
+        "27": "Education",
+        "28": "Science & Technology",
+        "30": "Movies",
+        "31": "Anime/Animation",
+        "32": "Action/Adventure",
+        "33": "Classics",
+        "34": "Comedy",
+        "35": "Documentary",
+        "36": "Drama",
+        "37": "Family",
+        "38": "Foreign",
+        "39": "Horror",
+        "40": "Sci-Fi/Fantasy",
+        "41": "Thriller",
+        "42": "Shorts",
+        "43": "Shows",
+        "44": "Trailers",
+    }
+    return video_category_id.get(str(category_id), "Unknown")
+
+
+
+def _save_token_cache(credentials: Credentials):
+    os.makedirs(os.path.dirname(TOKEN_CACHE_PATH), exist_ok=True)
+    with open(TOKEN_CACHE_PATH, "w") as f:
+        json.dump({
+            "access_token": credentials.token,
+            "refresh_token": credentials.refresh_token,
+            "expiry": credentials.expiry.isoformat() if credentials.expiry else None,
+        }, f)
+
+def _load_token_cache(client_id: str, client_secret: str) -> Credentials | None:
+    if not os.path.exists(TOKEN_CACHE_PATH):
+        return None
+    with open(TOKEN_CACHE_PATH) as f:
+        data = json.load(f)
+    expiry = datetime.fromisoformat(data["expiry"]) if data.get("expiry") else None
     credentials = Credentials(
-        token=token_info.get("access_token"),
-        refresh_token=token_info.get("refresh_token"),
+        token=data.get("access_token"),
+        refresh_token=data.get("refresh_token"),
         token_uri="https://oauth2.googleapis.com/token",
         client_id=client_id,
         client_secret=client_secret,
-        scopes=["https://www.googleapis.com/auth/yt-analytics.readonly"]
+        scopes=["https://www.googleapis.com/auth/yt-analytics.readonly","https://www.googleapis.com/auth/youtube.readonly"],
+        expiry=expiry,
     )
+    if not credentials.valid:
+        if not credentials.refresh_token:
+            return None
+        credentials.refresh(Request())
+        _save_token_cache(credentials)
+    return credentials
+
+
+def get_gcp_secret(secret_name:str, secret_version:str = "latest", project_id:str=PROJECT_ID):
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/{project_id}/secrets/{secret_name}/versions/{secret_version}"
+    payload = client.access_secret_version(request={"name": name}).payload.data.decode("utf-8")
+    return payload
+
+def get_youtube_analytics_api_v2_service():
+    client_id = get_gcp_secret(CLIENT_ID_STRING_SECRET)
+    client_secret = get_gcp_secret(CLIENT_SECRET_STRING_SECRET)
+
+    credentials = _load_token_cache(client_id, client_secret)
+    if credentials is None:
+        # Cold start: pull from Secret Manager.
+        # expires_in in the stored token is relative to issuance time (unknown), so
+        # force a refresh immediately to get a fresh access token with a real expiry.
+        token_info = json.loads(get_gcp_secret(TOKEN_JSON_SECRET, TOKEN_SECRET_VERSION))
+        refresh_token_expires_in = token_info.get("refresh_token_expires_in")
+        if refresh_token_expires_in:
+            print(f"Note: refresh token expires in {refresh_token_expires_in} seconds (~{refresh_token_expires_in // 86400} days)")
+        credentials = Credentials(
+            token=None,  # force refresh — stored access token may be stale
+            refresh_token=token_info.get("refresh_token"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=["https://www.googleapis.com/auth/yt-analytics.readonly"],
+        )
+        credentials.refresh(Request())
+        _save_token_cache(credentials)
 
     return googleapiclient.discovery.build("youtubeAnalytics", "v2", credentials=credentials)
 
-def get_video_ids(youtube_service, start_date, end_date) -> dict:
+def get_youtube_data_api_v3_service():
+    client_id = get_gcp_secret(CLIENT_ID_STRING_SECRET)
+    client_secret = get_gcp_secret(CLIENT_SECRET_STRING_SECRET)
+    credentials = _load_token_cache(client_id, client_secret)
+    if credentials is None:
+        token_info = json.loads(get_gcp_secret(TOKEN_JSON_SECRET, TOKEN_SECRET_VERSION))
+        credentials = Credentials(
+            token=None,
+            refresh_token=token_info.get("refresh_token"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=["https://www.googleapis.com/auth/youtube.readonly"],
+        )
+        credentials.refresh(Request())
+        _save_token_cache(credentials)
+    return googleapiclient.discovery.build("youtube", "v3", credentials=credentials)
+
+def _iso8601_duration_to_seconds(duration: str) -> int | None:
+    if not duration:
+        return None
+    match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration)
+    if not match:
+        return None
+    h, m, s = (int(x or 0) for x in match.groups())
+    return h * 3600 + m * 60 + s
+
+def get_video_titles(youtube_dataapi_v3_service, video_ids: list) -> pa.Table:
+    """Fetches video titles for a list of video IDs using the YouTube Data API v3.
+    Returns a pa.Table with columns: video_id, video_title.
+    The Data API accepts at most 50 IDs per request.
+    """
+    video_id_col, video_title_col = [], []
+    for chunk in chunk_video_ids(set(video_ids), chunk_size=50):
+        response = youtube_dataapi_v3_service.videos().list(
+            part="snippet",
+            id=",".join(chunk),
+        ).execute()
+        for item in response.get("items", []):
+            video_id_col.append(item["id"])
+            video_title_col.append(item["snippet"]["title"])
+    return pa.table({"video_id": video_id_col, "video_title": video_title_col})
+
+def get_video_metadata(youtube_dataapi_v3_service, video_ids: list) -> pa.Table:
+    """Fetches comprehensive metadata for a list of video IDs using the YouTube Data API v3.
+    Returns a pa.Table with snippet, contentDetails, statistics, and status fields.
+    The Data API accepts at most 50 IDs per request.
+    """
+    cols = {key: [] for key in VIDEO_METADATA_BQ_SCHEMA}
+    for chunk in chunk_video_ids(set(video_ids), chunk_size=50):
+        response = youtube_dataapi_v3_service.videos().list(
+            part="snippet,contentDetails,statistics,status",
+            id=",".join(chunk),
+        ).execute()
+        for item in response.get("items", []):
+            snippet = item.get("snippet", {})
+            content = item.get("contentDetails", {})
+            stats   = item.get("statistics", {})
+            status  = item.get("status", {})
+            region  = content.get("regionRestriction", {})
+
+            cols["video_id"].append(item["id"])
+            cols["title"].append(snippet.get("title"))
+            cols["publishedAt"].append(snippet.get("publishedAt"))
+            cols["description"].append(snippet.get("description"))
+            cols["tags"].append(snippet.get("tags") or [])
+            cols["categoryId"].append(snippet.get("categoryId"))
+            cols["categoryTitle"].append(convert_category_id_to_title(snippet.get("categoryId")))
+            cols["channelTitle"].append(snippet.get("channelTitle"))
+            cols["channelId"].append(snippet.get("channelId"))
+            cols["defaultLanguage"].append(snippet.get("defaultLanguage"))
+            cols["defaultAudioLanguage"].append(snippet.get("defaultAudioLanguage"))
+            cols["duration"].append(content.get("duration"))
+            cols["duration_in_seconds"].append(_iso8601_duration_to_seconds(content.get("duration")))
+            cols["definition"].append(content.get("definition"))
+            cols["caption"].append(content.get("caption"))
+            cols["regionRestriction_allowed"].append(region.get("allowed") or [])
+            cols["regionRestriction_blocked"].append(region.get("blocked") or [])
+            cols["viewCount"].append(int(stats["viewCount"]) if "viewCount" in stats else None)
+            cols["likeCount"].append(int(stats["likeCount"]) if "likeCount" in stats else None)
+            cols["commentCount"].append(int(stats["commentCount"]) if "commentCount" in stats else None)
+            cols["favoriteCount"].append(int(stats["favoriteCount"]) if "favoriteCount" in stats else None)
+            cols["privacyStatus"].append(status.get("privacyStatus"))
+            cols["madeForKids"].append(status.get("madeForKids"))
+            cols["embeddable"].append(status.get("embeddable"))
+    return pa.table(cols)
+
+def get_top_200_videos_for_date_range(youtube_service, start_date:str, end_date:str) -> dict:
     """Returns all videos IDS with greater than 0 views for the given date range, and the vie count for each video.
     Note: The YouTube Analytics API has a maximum of 200 rows per request, we also can't exclude video id or use startIndex to paginate
     """
     # returns all videos with greater than 0 views for the given date range
     # uses startIndex pagination; note: startIndex + maxResults cannot exceed 50,000
     max_results = 200
-
-
-
 
     response = youtube_service.reports().query(
         ids="channel==MINE",
@@ -64,12 +337,45 @@ def get_video_ids(youtube_service, start_date, end_date) -> dict:
         dimensions="video",
         sort="-views",  # must specify sort or query fails
     ).execute()
-
+    headers = [col["name"] for col in response.get("columnHeaders", [])]
     rows = response.get("rows", [])
     if len(rows) >= 200:
         print(f"Warning: Retrieved {len(rows)} rows, which is the maximum per request. Consider shortening the date range to ensure you retrieve all data.")
-    
+    columns = dict(zip(headers, zip(*rows))) if rows else {h: [] for h in headers}
+    columns.pop('views') #drop the 'views' key
+    return pa.table(columns)
+
+
+def get_user_activity_single_video_single_day(youtube_service, start_date:str, end_date:str, video_id:str):
+    response = youtube_service.reports().query(
+        dimensions  = "day",
+        ids         ="channel==MINE",
+        startDate   = start_date,
+        endDate     = end_date,
+        filters     = f"video=={video_id}",
+        metrics     = "engagedViews,views,redViews,comments,likes,dislikes,shares,estimatedMinutesWatched,estimatedRedMinutesWatched,averageViewDuration,averageViewPercentage,annotationClickThroughRate,annotationCloseRate,annotationImpressions,annotationClickableImpressions,annotationClosableImpressions,annotationClicks,annotationCloses,cardClickRate,cardTeaserClickRate,cardImpressions,cardTeaserImpressions,cardClicks,cardTeaserClicks"
+    ).execute()
+
+    headers = [col["name"] for col in response.get("columnHeaders", [])]
+    rows = response.get("rows", [])
+    columns = dict(zip(headers, zip(*rows))) if rows else {h: [] for h in headers}
+    return pa.table(columns)
+
+
+def generic_analytics_report(youtube_service, start_date, end_date, video_id=None, **kwargs):
+    if video_id is not None:
+        kwargs["filters"] = f"video=={video_id}"
+    response = youtube_service.reports().query(
+        ids         ="channel==MINE",
+        startDate   = start_date,
+        endDate     = end_date,
+        **kwargs
+    ).execute()
+
+    rows = response.get("rows",[])
     return dict(rows)
+
+
 
 def create_table(table, headers=None):
     if headers:
@@ -92,73 +398,60 @@ def generate_date_ranges(start_date:str, end_date:str,days_delta:int=7):
         start_date += delta
     return list(zip(date_ranges[0:-1], date_ranges[1:]))
 
+def chunk_video_ids(video_id_set:set, chunk_size:int=50)-> list:
+    """Chunks a set of video ids into lists of size chunk_size."""
+    video_id_list = list(video_id_set)
+    return [video_id_list[i:i + chunk_size] for i in range(0, len(video_id_list), chunk_size)]
+
+def load_data_to_bq(table: pa.Table, table_name: str, dataset_name: str, job_schema: dict, overwrite: bool = True) -> int:
+        destination_table_id = f'{PROJECT_ID}.{dataset_name}.{table_name}'
+        schema = pa.schema([(key, job_schema[key]) for key in job_schema])
+        cast_table = table.cast(schema)
+        try:
+            pa_bq.write_table(cast_table, destination_table_id, table_overwrite=overwrite)
+            print(f"Loaded {cast_table.num_rows} rows to {destination_table_id}")
+            return cast_table.num_rows
+        except Exception as e:
+            print(f"Failed to load to {destination_table_id}: {e}")
+            raise
+
+
 def main():
     try:
-        youtube_analytics = get_authenticated_service()
-
-        # Define the report query
-        # request = get_video_ids(youtube_analytics, start_date="2025-01-01", end_date="2025-01-01")
-        # request = youtube_analytics.reports().query(
-        #     ids=f"channel==MINE",
-        #     startDate="2025-01-01",
-        #     endDate="2026-01-01",
-        #     # metrics=",".join(METRICS),
-        #     metrics="views",
-        #     maxResults=200, # YouTube Analytics API has a max limit of 200
-        #     # dimensions=",".join(DIMENSIONS),
-        #     dimensions="video",
-        #     sort="-views",
-        # )
-
-        # response = request.execute()
-
-        # headers = METRICS
-        # create_table(response.get("rows", []), headers=headers)
-        # print(f"Total rows retrieved: {len(response.get('rows', []))}")
-        # metrics = get_video_ids(youtube_analytics, start_date="2025-01-01", end_date="2025-01-01")
-
-        # metrics = get_video_ids(youtube_analytics, start_date="2025-01-01", end_date="2025-02-01")
-        # metrics = get_video_ids(youtube_analytics, start_date="2021-06-01", end_date="2022-01-01")
-        # metrics = get_video_ids(youtube_analytics, start_date="2022-01-01", end_date="2022-06-01")
-        # metrics = get_video_ids(youtube_analytics, start_date="2023-01-01", end_date="2023-06-01")
-        # metrics = get_video_ids(youtube_analytics, start_date="2024-01-01", end_date="2024-06-01")
-
+        youtube_analytics_service = get_youtube_analytics_api_v2_service()
+        youtube_data_service = get_youtube_data_api_v3_service()
         sample_date_ranges = generate_date_ranges(start_date="2021-01-01", end_date="2026-02-01", days_delta=7)
-        # start_end_date_pairs = list(zip(dates[0:-1:], dates[1:]))
-        # print(start_end_date_pairs)
 
-        # sample_date_ranges = [('2021-01-01', '2021-01-08'), ('2021-01-08', '2021-01-15'), ('2021-01-15', '2021-01-22'), ('2021-01-22', '2021-01-29'), ('2021-01-29', '2021-02-05')]
-        # sample_date_ranges = [('2021-01-01', '2021-01-08'), ('2021-01-08', '2021-01-15'), ('2021-01-15', '2021-01-22'), ('2021-01-22', '2021-01-29'), ('2021-01-29', '2021-02-05'), ('2021-02-05', '2021-02-12'), ('2021-02-12', '2021-02-19'), ('2021-02-19', '2021-02-26'), ('2021-02-26', '2021-03-05'), ('2021-03-05', '2021-03-12'), ('2021-03-12', '2021-03-19'), ('2021-03-19', '2021-03-26'), ('2021-03-26', '2021-04-02'), ('2021-04-02', '2021-04-09'), ('2021-04-09', '2021-04-16'), ('2021-04-16', '2021-04-23'), ('2021-04-23', '2021-04-30'), ('2021-04-30', '2021-05-07'), ('2021-05-07', '2021-05-14'), ('2021-05-14', '2021-05-21'), ('2021-05-21', '2021-05-28'), ('2021-05-28', '2021-06-04'), ('2021-06-04', '2021-06-11'), ('2021-06-11', '2021-06-18'), ('2021-06-18', '2021-06-25'), ('2021-06-25', '2021-07-02'), ('2021-07-02', '2021-07-09'), ('2021-07-09', '2021-07-16'), ('2021-07-16', '2021-07-23'), ('2021-07-23', '2021-07-30'), ('2021-07-30', '2021-08-06'), ('2021-08-06', '2021-08-13'), ('2021-08-13', '2021-08-20'), ('2021-08-20', '2021-08-27'), ('2021-08-27', '2021-09-03'), ('2021-09-03', '2021-09-10'), ('2021-09-10', '2021-09-17'), ('2021-09-17', '2021-09-24'), ('2021-09-24', '2021-10-01'), ('2021-10-01', '2021-10-08'), ('2021-10-08', '2021-10-15'), ('2021-10-15', '2021-10-22'), ('2021-10-22', '2021-10-29'), ('2021-10-29', '2021-11-05'), ('2021-11-05', '2021-11-12'), ('2021-11-12', '2021-11-19'), ('2021-11-19', '2021-11-26'), ('2021-11-26', '2021-12-03'), ('2021-12-03', '2021-12-10'), ('2021-12-10', '2021-12-17'), ('2021-12-17', '2021-12-24'), ('2021-12-24', '2021-12-31'), ('2021-12-31', '2022-01-07'), ('2022-01-07', '2022-01-14'), ('2022-01-14', '2022-01-21'), ('2022-01-21', '2022-01-28'), ('2022-01-28', '2022-02-04'), ('2022-02-04', '2022-02-11'), ('2022-02-11', '2022-02-18'), ('2022-02-18', '2022-02-25'), ('2022-02-25', '2022-03-04'), ('2022-03-04', '2022-03-11'), ('2022-03-11', '2022-03-18'), ('2022-03-18', '2022-03-25'), ('2022-03-25', '2022-04-01'), ('2022-04-01', '2022-04-08'), ('2022-04-08', '2022-04-15'), ('2022-04-15', '2022-04-22'), ('2022-04-22', '2022-04-29'), ('2022-04-29', '2022-05-06'), ('2022-05-06', '2022-05-13'), ('2022-05-13', '2022-05-20'), ('2022-05-20', '2022-05-27'), ('2022-05-27', '2022-06-03'), ('2022-06-03', '2022-06-10'), ('2022-06-10', '2022-06-17'), ('2022-06-17', '2022-06-24'), ('2022-06-24', '2022-07-01'), ('2022-07-01', '2022-07-08'), ('2022-07-08', '2022-07-15'), ('2022-07-15', '2022-07-22'), ('2022-07-22', '2022-07-29'), ('2022-07-29', '2022-08-05'), ('2022-08-05', '2022-08-12'), ('2022-08-12', '2022-08-19'), ('2022-08-19', '2022-08-26'), ('2022-08-26', '2022-09-02'), ('2022-09-02', '2022-09-09'), ('2022-09-09', '2022-09-16'), ('2022-09-16', '2022-09-23'), ('2022-09-23', '2022-09-30'), ('2022-09-30', '2022-10-07'), ('2022-10-07', '2022-10-14'), ('2022-10-14', '2022-10-21'), ('2022-10-21', '2022-10-28'), ('2022-10-28', '2022-11-04'), ('2022-11-04', '2022-11-11'), ('2022-11-11', '2022-11-18'), ('2022-11-18', '2022-11-25'), ('2022-11-25', '2022-12-02'), ('2022-12-02', '2022-12-09'), ('2022-12-09', '2022-12-16'), ('2022-12-16', '2022-12-23'), ('2022-12-23', '2022-12-30'), ('2022-12-30', '2023-01-06'), ('2023-01-06', '2023-01-13'), ('2023-01-13', '2023-01-20'), ('2023-01-20', '2023-01-27'), ('2023-01-27', '2023-02-03'), ('2023-02-03', '2023-02-10'), ('2023-02-10', '2023-02-17'), ('2023-02-17', '2023-02-24'), ('2023-02-24', '2023-03-03'), ('2023-03-03', '2023-03-10'), ('2023-03-10', '2023-03-17'), ('2023-03-17', '2023-03-24'), ('2023-03-24', '2023-03-31'), ('2023-03-31', '2023-04-07'), ('2023-04-07', '2023-04-14'), ('2023-04-14', '2023-04-21'), ('2023-04-21', '2023-04-28'), ('2023-04-28', '2023-05-05'), ('2023-05-05', '2023-05-12'), ('2023-05-12', '2023-05-19'), ('2023-05-19', '2023-05-26'), ('2023-05-26', '2023-06-02'), ('2023-06-02', '2023-06-09'), ('2023-06-09', '2023-06-16'), ('2023-06-16', '2023-06-23'), ('2023-06-23', '2023-06-30'), ('2023-06-30', '2023-07-07'), ('2023-07-07', '2023-07-14'), ('2023-07-14', '2023-07-21'), ('2023-07-21', '2023-07-28'), ('2023-07-28', '2023-08-04'), ('2023-08-04', '2023-08-11'), ('2023-08-11', '2023-08-18'), ('2023-08-18', '2023-08-25'), ('2023-08-25', '2023-09-01'), ('2023-09-01', '2023-09-08'), ('2023-09-08', '2023-09-15'), ('2023-09-15', '2023-09-22'), ('2023-09-22', '2023-09-29'), ('2023-09-29', '2023-10-06'), ('2023-10-06', '2023-10-13'), ('2023-10-13', '2023-10-20'), ('2023-10-20', '2023-10-27'), ('2023-10-27', '2023-11-03'), ('2023-11-03', '2023-11-10'), ('2023-11-10', '2023-11-17'), ('2023-11-17', '2023-11-24'), ('2023-11-24', '2023-12-01'), ('2023-12-01', '2023-12-08'), ('2023-12-08', '2023-12-15'), ('2023-12-15', '2023-12-22'), ('2023-12-22', '2023-12-29'), ('2023-12-29', '2024-01-05'), ('2024-01-05', '2024-01-12'), ('2024-01-12', '2024-01-19'), ('2024-01-19', '2024-01-26'), ('2024-01-26', '2024-02-02'), ('2024-02-02', '2024-02-09'), ('2024-02-09', '2024-02-16'), ('2024-02-16', '2024-02-23'), ('2024-02-23', '2024-03-01'), ('2024-03-01', '2024-03-08'), ('2024-03-08', '2024-03-15'), ('2024-03-15', '2024-03-22'), ('2024-03-22', '2024-03-29'), ('2024-03-29', '2024-04-05'), ('2024-04-05', '2024-04-12'), ('2024-04-12', '2024-04-19'), ('2024-04-19', '2024-04-26'), ('2024-04-26', '2024-05-03'), ('2024-05-03', '2024-05-10'), ('2024-05-10', '2024-05-17'), ('2024-05-17', '2024-05-24'), ('2024-05-24', '2024-05-31'), ('2024-05-31', '2024-06-07'), ('2024-06-07', '2024-06-14'), ('2024-06-14', '2024-06-21'), ('2024-06-21', '2024-06-28'), ('2024-06-28', '2024-07-05'), ('2024-07-05', '2024-07-12'), ('2024-07-12', '2024-07-19'), ('2024-07-19', '2024-07-26'), ('2024-07-26', '2024-08-02'), ('2024-08-02', '2024-08-09'), ('2024-08-09', '2024-08-16'), ('2024-08-16', '2024-08-23'), ('2024-08-23', '2024-08-30'), ('2024-08-30', '2024-09-06'), ('2024-09-06', '2024-09-13'), ('2024-09-13', '2024-09-20'), ('2024-09-20', '2024-09-27'), ('2024-09-27', '2024-10-04'), ('2024-10-04', '2024-10-11'), ('2024-10-11', '2024-10-18'), ('2024-10-18', '2024-10-25'), ('2024-10-25', '2024-11-01'), ('2024-11-01', '2024-11-08'), ('2024-11-08', '2024-11-15'), ('2024-11-15', '2024-11-22'), ('2024-11-22', '2024-11-29'), ('2024-11-29', '2024-12-06'), ('2024-12-06', '2024-12-13'), ('2024-12-13', '2024-12-20'), ('2024-12-20', '2024-12-27'), ('2024-12-27', '2025-01-03'), ('2025-01-03', '2025-01-10'), ('2025-01-10', '2025-01-17'), ('2025-01-17', '2025-01-24'), ('2025-01-24', '2025-01-31'), ('2025-01-31', '2025-02-07'), ('2025-02-07', '2025-02-14'), ('2025-02-14', '2025-02-21'), ('2025-02-21', '2025-02-28'), ('2025-02-28', '2025-03-07'), ('2025-03-07', '2025-03-14'), ('2025-03-14', '2025-03-21'), ('2025-03-21', '2025-03-28'), ('2025-03-28', '2025-04-04'), ('2025-04-04', '2025-04-11'), ('2025-04-11', '2025-04-18'), ('2025-04-18', '2025-04-25'), ('2025-04-25', '2025-05-02'), ('2025-05-02', '2025-05-09'), ('2025-05-09', '2025-05-16'), ('2025-05-16', '2025-05-23'), ('2025-05-23', '2025-05-30'), ('2025-05-30', '2025-06-06'), ('2025-06-06', '2025-06-13'), ('2025-06-13', '2025-06-20'), ('2025-06-20', '2025-06-27'), ('2025-06-27', '2025-07-04'), ('2025-07-04', '2025-07-11'), ('2025-07-11', '2025-07-18'), ('2025-07-18', '2025-07-25'), ('2025-07-25', '2025-08-01'), ('2025-08-01', '2025-08-08'), ('2025-08-08', '2025-08-15'), ('2025-08-15', '2025-08-22'), ('2025-08-22', '2025-08-29'), ('2025-08-29', '2025-09-05'), ('2025-09-05', '2025-09-12'), ('2025-09-12', '2025-09-19'), ('2025-09-19', '2025-09-26'), ('2025-09-26', '2025-10-03'), ('2025-10-03', '2025-10-10'), ('2025-10-10', '2025-10-17'), ('2025-10-17', '2025-10-24'), ('2025-10-24', '2025-10-31'), ('2025-10-31', '2025-11-07'), ('2025-11-07', '2025-11-14'), ('2025-11-14', '2025-11-21'), ('2025-11-21', '2025-11-28'), ('2025-11-28', '2025-12-05'), ('2025-12-05', '2025-12-12'), ('2025-12-12', '2025-12-19'), ('2025-12-19', '2025-12-26'), ('2025-12-26', '2026-01-02'), ('2026-01-02', '2026-01-09'), ('2026-01-09', '2026-01-16'), ('2026-01-16', '2026-01-23'), ('2026-01-23', '2026-01-30')]
-        youtube_id_set = set()
+        
+        # sample_date_ranges = [("2021-01-01", "2021-01-08"),("2021-01-08", "2021-01-15"),("2021-01-15", "2021-01-22")]
+        ## get video IDs and get title 
+        youtube_id_table = pa.schema([("video", pa.string())]).empty_table()
         for start_date, end_date in sample_date_ranges:
             print(start_date, end_date)
-            # print(f"Retrieving data for date range: {start_date} to {end_date}")
-            metrics = get_video_ids(youtube_analytics, start_date=start_date, end_date=end_date)
-            youtube_id_set.update(list(metrics.keys()))
-            # print(f"Retrieved {len(metrics)} rows for date range: {start_date} to {end_date}")
-        print(len(youtube_id_set))
-        print(youtube_id_set)
+            given_date_youtube_ids = get_top_200_videos_for_date_range(youtube_analytics_service, start_date=start_date, end_date=end_date)
+            youtube_id_table = pa.concat_tables([youtube_id_table,given_date_youtube_ids])
 
 
-        ####
-        # credentials = youtube_analytics._http.credentials
-
-        # def fetch_range(start, end):
-        #     service = googleapiclient.discovery.build("youtubeAnalytics", "v2", credentials=credentials)
-        #     return get_video_ids(service, start, end)
-
-        # youtube_id_set = set()
-        # with ThreadPoolExecutor(max_workers=5) as executor:
-        #     futures = {
-        #         executor.submit(fetch_range, start, end): (start, end)
-        #         for start, end in sample_date_ranges
-        #     }
-        #     for future in as_completed(futures):
-        #         youtube_id_set.update(future.result().keys())
-
-        print(len(youtube_id_set))
+        
+        print(f'length including duplices:{len(youtube_id_table)}')
+        unique_youtube_id =pa.Table.from_pandas(youtube_id_table.to_pandas().drop_duplicates())
+        print(f'length without duplices:{len(unique_youtube_id)}')
+        vido_ids_titles_table = get_video_titles(youtube_data_service ,unique_youtube_id["video"].to_pylist())
+        # load_data_to_bq( vido_ids_titles_table ,"video_id_title_mapping","govuk_youtube_channel_staging",VIDEO_ID_BQ_SCHEMA)
 
 
+        ## Given video_ids, get metatdata 
+        youtube_ids_with_metadata_mapping_table = get_video_metadata(youtube_data_service, unique_youtube_id["video"].to_pylist())
+        load_data_to_bq( youtube_ids_with_metadata_mapping_table ,"video_id_metadata_mapping","govuk_youtube_channel_staging",VIDEO_METADATA_BQ_SCHEMA)
+
+        # user_table = get_user_activity_single_video_single_day(youtube_analytics,"2021-01-01", "2021-01-08","1hbnPCdM4ls")
+        # print(generic_analytics_report(youtube_analytics,"2021-01-01", "2021-01-08",video_id="1hbnPCdM4ls", **user_activity_single_video_single_day_config)) 
+        # print(generic_analytics_report(youtube_analytics, "2021-01-01", "2021-01-08", **top_200_videos_for_date_range_config))
+
+
+        # user_df = (get_user_activity_single_video_single_day(youtube_analytics,"2021-01-01", "2021-01-08","1hbnPCdM4ls"))
+        # user_table = pa.Table.from_pandas(user_df)
+        # load_data_to_bq(user_table,"video_id", "govuk_youtube_channel_staging", USER_ACTIVITY_BQ_SCHEMA)
 
 
 
