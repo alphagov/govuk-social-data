@@ -130,42 +130,39 @@ USER_ACTIVITY_BQ_SCHEMA = {
     "cardTeaserClicks":                 pa.int64(),
 }
 # generated using GB region code + snippet https://developers.google.com/youtube/v3/docs/videoCategories/list
-def convert_category_id_to_title(category_id:int) -> str:
-    """Convert YouTube video category ID to human-readable title"""
-    video_category_id = {
-        "1":  "Film & Animation",
-        "2":  "Autos & Vehicles",
-        "10": "Music",
-        "15": "Pets & Animals",
-        "17": "Sports",
-        "18": "Short Movies",
-        "19": "Travel & Events",
-        "20": "Gaming",
-        "21": "Videoblogging",
-        "22": "People & Blogs",
-        "23": "Comedy",
-        "24": "Entertainment",
-        "25": "News & Politics",
-        "26": "Howto & Style",
-        "27": "Education",
-        "28": "Science & Technology",
-        "30": "Movies",
-        "31": "Anime/Animation",
-        "32": "Action/Adventure",
-        "33": "Classics",
-        "34": "Comedy",
-        "35": "Documentary",
-        "36": "Drama",
-        "37": "Family",
-        "38": "Foreign",
-        "39": "Horror",
-        "40": "Sci-Fi/Fantasy",
-        "41": "Thriller",
-        "42": "Shorts",
-        "43": "Shows",
-        "44": "Trailers",
-    }
-    return video_category_id.get(str(category_id), "Unknown")
+VIDEO_CATEGORY_ID_TO_TITLE = {
+    "1":  "Film & Animation",
+    "2":  "Autos & Vehicles",
+    "10": "Music",
+    "15": "Pets & Animals",
+    "17": "Sports",
+    "18": "Short Movies",
+    "19": "Travel & Events",
+    "20": "Gaming",
+    "21": "Videoblogging",
+    "22": "People & Blogs",
+    "23": "Comedy",
+    "24": "Entertainment",
+    "25": "News & Politics",
+    "26": "Howto & Style",
+    "27": "Education",
+    "28": "Science & Technology",
+    "30": "Movies",
+    "31": "Anime/Animation",
+    "32": "Action/Adventure",
+    "33": "Classics",
+    "34": "Comedy",
+    "35": "Documentary",
+    "36": "Drama",
+    "37": "Family",
+    "38": "Foreign",
+    "39": "Horror",
+    "40": "Sci-Fi/Fantasy",
+    "41": "Thriller",
+    "42": "Shorts",
+    "43": "Shows",
+    "44": "Trailers",
+}
 
 
 
@@ -300,7 +297,7 @@ def get_video_metadata(youtube_dataapi_v3_service, video_ids: list) -> pa.Table:
             cols["description"].append(snippet.get("description"))
             cols["tags"].append(snippet.get("tags") or [])
             cols["categoryId"].append(snippet.get("categoryId"))
-            cols["categoryTitle"].append(convert_category_id_to_title(snippet.get("categoryId")))
+            cols["categoryTitle"].append(VIDEO_CATEGORY_ID_TO_TITLE.get(snippet.get("categoryId"), "Unknown"))
             cols["channelTitle"].append(snippet.get("channelTitle"))
             cols["channelId"].append(snippet.get("channelId"))
             cols["defaultLanguage"].append(snippet.get("defaultLanguage"))
