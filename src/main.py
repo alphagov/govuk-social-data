@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 
 import json
+import logging
 import os
 import re
+from typing import Any
 import googleapiclient.discovery
+from googleapiclient.discovery import Resource
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google.cloud import secretmanager
@@ -29,12 +32,6 @@ METRICS= ["views"]
 DIMENSIONS = ["video"]
 
 # by day 
-top_200_videos_for_date_range_config = {
-    "dimensions":"video",
-    "metrics"   :"views",
-    "maxResults":200,
-    "sort":"-views"  
-}
 
 user_activity_single_video_single_day_config = {
     "dimensions":"day,creatorContentType",
@@ -166,7 +163,7 @@ VIDEO_CATEGORY_ID_TO_TITLE = {
 
 
 
-def _save_token_cache(credentials: Credentials):
+def _save_token_cache(credentials: Credentials) -> None:
     os.makedirs(os.path.dirname(TOKEN_CACHE_PATH), exist_ok=True)
     with open(TOKEN_CACHE_PATH, "w") as f:
         json.dump({
@@ -198,13 +195,13 @@ def _load_token_cache(client_id: str, client_secret: str) -> Credentials | None:
     return credentials
 
 
-def get_gcp_secret(secret_name:str, secret_version:str = "latest", project_id:str=PROJECT_ID):
+def get_gcp_secret(secret_name: str, secret_version: str = "latest", project_id: str = PROJECT_ID) -> str:
     client = secretmanager.SecretManagerServiceClient()
     name = f"projects/{project_id}/secrets/{secret_name}/versions/{secret_version}"
     payload = client.access_secret_version(request={"name": name}).payload.data.decode("utf-8")
     return payload
 
-def get_youtube_analytics_api_v2_service():
+def get_youtube_analytics_api_v2_service() -> Resource:
     client_id = get_gcp_secret(CLIENT_ID_STRING_SECRET)
     client_secret = get_gcp_secret(CLIENT_SECRET_STRING_SECRET)
 
@@ -230,7 +227,7 @@ def get_youtube_analytics_api_v2_service():
 
     return googleapiclient.discovery.build("youtubeAnalytics", "v2", credentials=credentials)
 
-def get_youtube_data_api_v3_service():
+def get_youtube_data_api_v3_service() -> Resource:
     client_id = get_gcp_secret(CLIENT_ID_STRING_SECRET)
     client_secret = get_gcp_secret(CLIENT_SECRET_STRING_SECRET)
     credentials = _load_token_cache(client_id, client_secret)
@@ -257,7 +254,7 @@ def _iso8601_duration_to_seconds(duration: str) -> int | None:
     h, m, s = (int(x or 0) for x in match.groups())
     return h * 3600 + m * 60 + s
 
-def get_video_titles(youtube_dataapi_v3_service, video_ids: list) -> pa.Table:
+def get_video_titles(youtube_dataapi_v3_service: Resource, video_ids: list[str]) -> pa.Table:
     """Fetches video titles for a list of video IDs using the YouTube Data API v3.
     Returns a pa.Table with columns: video_id, video_title.
     The Data API accepts at most 50 IDs per request.
@@ -273,7 +270,7 @@ def get_video_titles(youtube_dataapi_v3_service, video_ids: list) -> pa.Table:
             video_title_col.append(item["snippet"]["title"])
     return pa.table({"video_id": video_id_col, "video_title": video_title_col})
 
-def get_video_metadata(youtube_dataapi_v3_service, video_ids: list) -> pa.Table:
+def get_video_metadata(youtube_dataapi_v3_service: Resource, video_ids: list[str]) -> pa.Table:
     """Fetches comprehensive metadata for a list of video IDs using the YouTube Data API v3.
     Returns a pa.Table with snippet, contentDetails, statistics, and status fields.
     The Data API accepts at most 50 IDs per request.
@@ -317,33 +314,35 @@ def get_video_metadata(youtube_dataapi_v3_service, video_ids: list) -> pa.Table:
             cols["embeddable"].append(status.get("embeddable"))
     return pa.table(cols)
 
-def get_top_200_videos_for_date_range(youtube_service, start_date:str, end_date:str) -> dict:
-    """Returns all videos IDS with greater than 0 views for the given date range, and the vie count for each video.
-    Note: The YouTube Analytics API has a maximum of 200 rows per request, we also can't exclude video id or use startIndex to paginate
+def get_top_200_videos_for_date_range(youtube_service: Resource, start_date: str, end_date: str, days_delta: int = 7) -> pa.Table:
+    """Returns unique video IDs with greater than 0 views for the given date range.
+    Note: The YouTube Analytics API has a maximum of 200 rows per request, so we query multiple date ranges to discover more videos.
     """
-    # returns all videos with greater than 0 views for the given date range
-    # uses startIndex pagination; note: startIndex + maxResults cannot exceed 50,000
-    max_results = 200
+    sample_date_ranges = generate_date_ranges(start_date=start_date, end_date=end_date, days_delta=days_delta)
+    # sample_date_ranges = [("2021-01-01", "2021-01-08"), ("2021-01-08", "2021-01-15")] # for testing - comment out to run full date range
 
-    response = youtube_service.reports().query(
-        ids="channel==MINE",
-        startDate=start_date,
-        endDate=end_date,
-        metrics="views",
-        maxResults=max_results,  # YouTube Analytics API has a max limit of 200
-        dimensions="video",
-        sort="-views",  # must specify sort or query fails
-    ).execute()
-    headers = [col["name"] for col in response.get("columnHeaders", [])]
-    rows = response.get("rows", [])
-    if len(rows) >= 200:
-        print(f"Warning: Retrieved {len(rows)} rows, which is the maximum per request. Consider shortening the date range to ensure you retrieve all data.")
-    columns = dict(zip(headers, zip(*rows))) if rows else {h: [] for h in headers}
-    columns.pop('views') #drop the 'views' key
-    return pa.table(columns)
+    video_ids: set[str] = set()
+    for range_start, range_end in sample_date_ranges:
+        print(range_start, range_end)
+        response = youtube_service.reports().query(
+            ids="channel==MINE",
+            startDate=range_start,
+            endDate=range_end,
+            metrics="views",
+            maxResults=200,
+            dimensions="video",
+            sort="-views",
+        ).execute()
+        rows = response.get("rows", [])
+        video_ids.update(row[0] for row in rows)
+        if len(rows) >= 200:
+            print(f"Warning: Retrieved {len(rows)} rows (max per request). Consider shortening the date range.")
+
+    print(f"Found {len(video_ids)} unique videos")
+    return pa.table({"video": list(video_ids)})
 
 
-def get_user_activity_single_video_single_day(youtube_service, start_date:str, end_date:str, video_id:str):
+def get_user_activity_single_video_single_day(youtube_service: Resource, start_date: str, end_date: str, video_id: str) -> pa.Table:
     response = youtube_service.reports().query(
         dimensions  = "day",
         ids         ="channel==MINE",
@@ -359,7 +358,7 @@ def get_user_activity_single_video_single_day(youtube_service, start_date:str, e
     return pa.table(columns)
 
 
-def generic_analytics_report(youtube_service, start_date, end_date, video_id=None, **kwargs):
+def generic_analytics_report(youtube_service: Resource, start_date: str, end_date: str, video_id: str | None = None, **kwargs: Any) -> list[dict[str, Any]]:
     if video_id is not None:
         kwargs["filters"] = f"video=={video_id}"
     response = youtube_service.reports().query(
@@ -369,12 +368,13 @@ def generic_analytics_report(youtube_service, start_date, end_date, video_id=Non
         **kwargs
     ).execute()
 
-    rows = response.get("rows",[])
-    return dict(rows)
+    headers = [col["name"] for col in response.get("columnHeaders", [])]
+    rows = response.get("rows", [])
+    return [dict(zip(headers, row)) for row in rows]
 
 
 
-def create_table(table, headers=None):
+def create_table(table: list[list[Any]], headers: list[str] | None = None) -> None:
     if headers:
         headstring = "\t{}\t" * len(headers)
         print(headstring.format(*headers))
@@ -384,7 +384,7 @@ def create_table(table, headers=None):
         print(rowstring.format(*row))
 
 
-def generate_date_ranges(start_date:str, end_date:str,days_delta:int=7):
+def generate_date_ranges(start_date: str, end_date: str, days_delta: int = 7) -> list[tuple[str, str]]:
     """Generates a list of date ranges (start_date, end_date) for each month between start_year and end_year."""
     start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
     end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -395,12 +395,12 @@ def generate_date_ranges(start_date:str, end_date:str,days_delta:int=7):
         start_date += delta
     return list(zip(date_ranges[0:-1], date_ranges[1:]))
 
-def chunk_video_ids(video_id_set:set, chunk_size:int=50)-> list:
+def chunk_video_ids(video_id_set: set[str], chunk_size: int = 50) -> list[list[str]]:
     """Chunks a set of video ids into lists of size chunk_size."""
     video_id_list = list(video_id_set)
     return [video_id_list[i:i + chunk_size] for i in range(0, len(video_id_list), chunk_size)]
 
-def load_data_to_bq(table: pa.Table, table_name: str, dataset_name: str, job_schema: dict, overwrite: bool = True) -> int:
+def load_data_to_bq(table: pa.Table, table_name: str, dataset_name: str, job_schema: dict[str, pa.DataType], overwrite: bool = True) -> int:
         destination_table_id = f'{PROJECT_ID}.{dataset_name}.{table_name}'
         schema = pa.schema([(key, job_schema[key]) for key in job_schema])
         cast_table = table.cast(schema)
@@ -413,44 +413,35 @@ def load_data_to_bq(table: pa.Table, table_name: str, dataset_name: str, job_sch
             raise
 
 
-def main():
+def main() -> None:
     try:
         youtube_analytics_service = get_youtube_analytics_api_v2_service()
         youtube_data_service = get_youtube_data_api_v3_service()
-        sample_date_ranges = generate_date_ranges(start_date="2021-01-01", end_date="2026-02-01", days_delta=7)
 
-        
-        # sample_date_ranges = [("2021-01-01", "2021-01-08"),("2021-01-08", "2021-01-15"),("2021-01-15", "2021-01-22")]
-        ## get video IDs and get title 
-        youtube_id_table = pa.schema([("video", pa.string())]).empty_table()
-        for start_date, end_date in sample_date_ranges:
-            print(start_date, end_date)
-            given_date_youtube_ids = get_top_200_videos_for_date_range(youtube_analytics_service, start_date=start_date, end_date=end_date)
-            youtube_id_table = pa.concat_tables([youtube_id_table,given_date_youtube_ids])
+        start_date = "2021-01-01"
+        end_date = "2021-01-08"
+
+        ### Youtube Analytics API v2 services
+        ### create_vido_ids using Analytics API v2
+        youtube_id_table = get_top_200_videos_for_date_range(youtube_analytics_service, start_date=start_date, end_date=end_date)
+
+        ## Given video_id + date range, get user activity metrics by day
+        # user_table = get_user_activity_single_video_single_day(youtube_analytics_service,"2021-01-01", "2021-01-08","1hbnPCdM4ls")
+        # user_table  = generic_analytics_report(youtube_analytics_service,start_date, end_date,video_id="1hbnPCdM4ls", **user_activity_single_video_single_day_config)
+        # print(user_table)
 
 
-        
-        print(f'length including duplices:{len(youtube_id_table)}')
-        unique_youtube_id =pa.Table.from_pandas(youtube_id_table.to_pandas().drop_duplicates())
-        print(f'length without duplices:{len(unique_youtube_id)}')
-        vido_ids_titles_table = get_video_titles(youtube_data_service ,unique_youtube_id["video"].to_pylist())
+
+        ### Youtube Data API v3 functions
+        ## Given video_ids, get titles
+        vido_ids_titles_table = get_video_titles(youtube_data_service ,youtube_id_table["video"].to_pylist())
+        print(vido_ids_titles_table)
         # load_data_to_bq( vido_ids_titles_table ,"video_id_title_mapping","govuk_youtube_channel_staging",VIDEO_ID_BQ_SCHEMA)
 
-
         ## Given video_ids, get metatdata 
-        youtube_ids_with_metadata_mapping_table = get_video_metadata(youtube_data_service, unique_youtube_id["video"].to_pylist())
-        load_data_to_bq( youtube_ids_with_metadata_mapping_table ,"video_id_metadata_mapping","govuk_youtube_channel_staging",VIDEO_METADATA_BQ_SCHEMA)
-
-        # user_table = get_user_activity_single_video_single_day(youtube_analytics,"2021-01-01", "2021-01-08","1hbnPCdM4ls")
-        # print(generic_analytics_report(youtube_analytics,"2021-01-01", "2021-01-08",video_id="1hbnPCdM4ls", **user_activity_single_video_single_day_config)) 
-        # print(generic_analytics_report(youtube_analytics, "2021-01-01", "2021-01-08", **top_200_videos_for_date_range_config))
-
-
-        # user_df = (get_user_activity_single_video_single_day(youtube_analytics,"2021-01-01", "2021-01-08","1hbnPCdM4ls"))
-        # user_table = pa.Table.from_pandas(user_df)
-        # load_data_to_bq(user_table,"video_id", "govuk_youtube_channel_staging", USER_ACTIVITY_BQ_SCHEMA)
-
-
+        youtube_ids_with_metadata_mapping_table = get_video_metadata(youtube_data_service, youtube_id_table["video"].to_pylist())
+        print(youtube_ids_with_metadata_mapping_table)
+        # load_data_to_bq( youtube_ids_with_metadata_mapping_table ,"video_id_metadata_mapping","govuk_youtube_channel_staging",VIDEO_METADATA_BQ_SCHEMA)
 
 
 
