@@ -2,3 +2,29 @@
 markers = [
     "integration: tests that call real external APIs",
 ]
+
+[project]
+name = "youtube-exploration"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "oliverroberts1-gds",email = "oliver.roberts1@digital.cabinet-office.gov.uk"}
+]
+readme = "README.md"
+requires-python = ">=3.14.3"
+dependencies = [
+]
+
+[dependency-groups]
+dev = [
+    "google-api-python-client (>=2.192.0,<3.0.0)",
+    "google-auth (>=2.48.0,<3.0.0)",
+    "google-cloud (>=0.34.0,<0.35.0)",
+    "pyarrow (>=23.0.1,<24.0.0)",
+    "pyarrow-bigquery (>=0.5.7,<0.6.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
