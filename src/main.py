@@ -13,12 +13,10 @@ from google.auth.transport.requests import Request
 from google.cloud import secretmanager
 from datetime import date, timedelta, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import io
 import pyarrow as pa
-import pyarrow.bigquery as pa_bq
+import pyarrow.parquet as pq
 from google.cloud import bigquery
-import warnings
-warnings.filterwarnings("ignore", message="Cannot close again when the connection is already closed")
-from google.cloud.bigquery_storage_v1.exceptions import StreamClosedError
 
 
 logger = logging.getLogger(__name__)
@@ -545,32 +543,33 @@ def load_data_to_bq(table: pa.Table, table_name: str, dataset_name: str, job_sch
     destination_table_id = f'{PROJECT_ID}.{dataset_name}.{table_name}'
     schema = pa.schema([(key, job_schema[key]) for key in job_schema])
     cast_table = table.cast(schema)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        try:
-            pa_bq.write_table(cast_table, destination_table_id, table_overwrite=overwrite)
-            for w in caught:
-                logger.info("BigQuery warning: %s", w.message)
-            logger.info("Loaded %d rows to %s", cast_table.num_rows, destination_table_id)
-            return cast_table.num_rows
-        except Exception:
-            logger.exception("Failed to load to %s", destination_table_id)
-            raise
+    try:
+        client = bigquery.Client(project=PROJECT_ID)
+        job_config = bigquery.LoadJobConfig(
+            source_format=bigquery.SourceFormat.PARQUET,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE if overwrite else bigquery.WriteDisposition.WRITE_APPEND,
+        )
+        buf = io.BytesIO()
+        pq.write_table(cast_table, buf)
+        buf.seek(0)
+        job = client.load_table_from_file(buf, destination_table_id, job_config=job_config)
+        job.result()
+        logger.info("Loaded %d rows to %s", cast_table.num_rows, destination_table_id)
+        return cast_table.num_rows
+    except Exception:
+        logger.exception("Failed to load to %s", destination_table_id)
+        raise
 
 def retrieve_data_from_bq(PROJECT_ID: str, dataset_name: str, table_name: str) -> pa.Table:
     """Reads all rows from a BigQuery table and returns them as a pa.Table."""
     destination_table_id = f'{PROJECT_ID}.{dataset_name}.{table_name}'
     query = f"SELECT * FROM `{destination_table_id}`"
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        try:
-            table = pa_bq.read_query(project=PROJECT_ID, query=query)
-            for w in caught:
-                logger.info("BigQuery warning: %s", w.message)
-            return(table)
-        except Exception:
-            logger.exception("Failed to retrieve data from %s", destination_table_id)
-            raise
+    try:
+        client = bigquery.Client(project=PROJECT_ID)
+        return client.query(query).to_arrow()
+    except Exception:
+        logger.exception("Failed to retrieve data from %s", destination_table_id)
+        raise
 
 def _run_report(
     youtube_service: Resource,
@@ -595,15 +594,16 @@ def _run_report(
 def main() -> None:
     """Entry point: discovers video IDs, fetches metadata, and runs daily analytics reports."""
     logging.basicConfig(level=logging.INFO)
+    RUN_DAILY_REPORTS = False
     REFRESH_YOUTUBE_IDS_AND_METADATA = False  # set to True to refresh the list of video IDs (will create up to 200 new videos per date range chunk)
-    SMALL_SAMPLE = True  # set to True to only run analytics report for a small sample of videos (will use hardcoded video IDs instead of retrieving from BQ)
-    RUN_PERIODIC_REPORTS= False # perform the multi month demogrpahic, device and engagement analysis
+    SMALL_SAMPLE = False  # set to True to only run analytics report for a small sample of videos (will use hardcoded video IDs instead of retrieving from BQ)
+    RUN_PERIODIC_REPORTS= True # perform the multi month demogrpahic, device and engagement analysis
     try:
         youtube_analytics_service = get_youtube_analytics_api_v2_service()
         youtube_data_service = get_youtube_data_api_v3_service()
 
-        start_date = "2021-01-01"
-        end_date = "2021-01-08"
+        start_date = "2026-01-01"
+        end_date = "2026-01-01"
         ## Step 1: Get video IDs for the channel in the date range using Analytics API v2
         if REFRESH_YOUTUBE_IDS_AND_METADATA:
             ### create_vido_ids using Analytics API v2 - could be replaced now we have Youtube Data API v3 access, but leaving as is for now to avoid hitting Data API quota limits during development
@@ -631,22 +631,23 @@ def main() -> None:
         video_ids = youtube_ids_with_metadata_mapping_table["video_id"].to_pylist()
 
         # ## Youtube Analytics API v2 services
-        user_activity_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,
-            USER_ACTIVITY_BQ_SCHEMA, get_user_activity_single_video_single_day_config, "User Activity")
+        if RUN_DAILY_REPORTS:
+            user_activity_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,
+                USER_ACTIVITY_BQ_SCHEMA, get_user_activity_single_video_single_day_config, "User Activity")
 
-        playback_details_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,
-            PLAYBACK_DETAILS_BQ_SCHEMA, get_playback_details_single_video_single_day_config, "Playback Details")
+            playback_details_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,
+                PLAYBACK_DETAILS_BQ_SCHEMA, get_playback_details_single_video_single_day_config, "Playback Details")
 
-        playback_location_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,
-            PLAYBACK_LOCATION_BQ_SCHEMA, get_playback_locations_single_video_single_day_config, "Playback Location")
+            playback_location_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,
+                PLAYBACK_LOCATION_BQ_SCHEMA, get_playback_locations_single_video_single_day_config, "Playback Location")
 
-        traffic_sources_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,
-            TRAFFIC_SOURCES_BQ_SCHEMA, get_traffic_sources_single_video_single_day_config, "Traffic Sources")
+            traffic_sources_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,
+                TRAFFIC_SOURCES_BQ_SCHEMA, get_traffic_sources_single_video_single_day_config, "Traffic Sources")
 
-        load_data_to_bq(user_activity_table,'user_activity','govuk_youtube_channel_staging',_with_video_id(USER_ACTIVITY_BQ_SCHEMA),)
-        load_data_to_bq(playback_details_table,'playback_details','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_DETAILS_BQ_SCHEMA))
-        load_data_to_bq(playback_location_table,'playback_location','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA))
-        load_data_to_bq(traffic_sources_table,'traffic_sources','govuk_youtube_channel_staging',_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA))
+            load_data_to_bq(user_activity_table,'user_activity','govuk_youtube_channel_staging',_with_video_id(USER_ACTIVITY_BQ_SCHEMA),)
+            load_data_to_bq(playback_details_table,'playback_details','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_DETAILS_BQ_SCHEMA))
+            load_data_to_bq(playback_location_table,'playback_location','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA))
+            load_data_to_bq(traffic_sources_table,'traffic_sources','govuk_youtube_channel_staging',_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA))
 
         if RUN_PERIODIC_REPORTS:
             operating_system_and_device_table = _run_report(youtube_analytics_service, video_ids, start_date, end_date,

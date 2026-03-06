@@ -15,13 +15,17 @@ requires-python = ">=3.14.3"
 dependencies = [
 ]
 
+[tool.poetry]
+package-mode = false
+
 [dependency-groups]
 dev = [
     "google-api-python-client (>=2.192.0,<3.0.0)",
     "google-auth (>=2.48.0,<3.0.0)",
     "google-cloud (>=0.34.0,<0.35.0)",
     "pyarrow (>=23.0.1,<24.0.0)",
-    "pyarrow-bigquery (>=0.5.7,<0.6.0)"
+    "google-cloud-bigquery (>=3.31.0,<4.0.0)",
+    "google-cloud-secret-manager (>=2.23.0,<3.0.0)"
 ]
 
 
