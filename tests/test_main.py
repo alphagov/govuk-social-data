@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import logging
 import os
 from datetime import datetime
 from unittest.mock import MagicMock, patch
@@ -9,16 +10,25 @@ import pytest
 
 from src.main import (
     _iso8601_duration_to_seconds,
+    _run_report,
+    _with_video_id,
     chunk_video_ids,
-    create_table,
     generate_date_ranges,
+    get_playback_details_single_video_single_day_config,
+    get_playback_locations_single_video_single_day_config,
     get_top_200_videos_for_date_range,
+    get_traffic_sources_single_video_single_day_config,
     get_user_activity_single_video_single_day,
+    get_user_activity_single_video_single_day_config,
     get_video_metadata,
     get_video_titles,
     get_youtube_analytics_api_v2_service,
     get_youtube_data_api_v3_service,
     load_data_to_bq,
+    PLAYBACK_DETAILS_BQ_SCHEMA,
+    PLAYBACK_LOCATION_BQ_SCHEMA,
+    TRAFFIC_SOURCES_BQ_SCHEMA,
+    USER_ACTIVITY_BQ_SCHEMA,
     VIDEO_CATEGORY_ID_TO_TITLE,
 )
 
@@ -258,7 +268,7 @@ class TestGetTop200VideosForDateRange:
         assert isinstance(result, pa.Table)
         assert "video" in result.column_names
         assert "views" not in result.column_names
-        assert result.column("video").to_pylist() == ["vid1", "vid2"]
+        assert sorted(result.column("video").to_pylist()) == ["vid1", "vid2"]
 
     def test_empty_response(self) -> None:
         mock_service = MagicMock()
@@ -272,7 +282,7 @@ class TestGetTop200VideosForDateRange:
         result = get_top_200_videos_for_date_range(mock_service, "2021-01-01", "2021-01-08")
         assert result.num_rows == 0
 
-    def test_warns_at_200_rows(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_warns_at_200_rows(self, caplog: pytest.LogCaptureFixture) -> None:
         mock_service = MagicMock()
         rows = [[f"vid{i}", i] for i in range(200)]
         mock_service.reports().query().execute.return_value = {
@@ -282,9 +292,9 @@ class TestGetTop200VideosForDateRange:
             ],
             "rows": rows,
         }
-        get_top_200_videos_for_date_range(mock_service, "2021-01-01", "2021-01-08")
-        output = capsys.readouterr().out
-        assert "Warning" in output
+        with caplog.at_level(logging.WARNING):
+            get_top_200_videos_for_date_range(mock_service, "2021-01-01", "2021-01-08")
+        assert any("200" in record.message for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -331,20 +341,191 @@ class TestGetUserActivitySingleVideoSingleDay:
 # ---------------------------------------------------------------------------
 
 class TestLoadDataToBq:
-    @patch("src.main.pa_bq.write_table")
-    def test_loads_and_returns_row_count(self, mock_write: MagicMock) -> None:
+    @patch("src.main.bigquery.Client")
+    def test_loads_and_returns_row_count(self, mock_client_cls: MagicMock) -> None:
+        mock_client = mock_client_cls.return_value
+        mock_job = MagicMock()
+        mock_client.load_table_from_file.return_value = mock_job
         table = pa.table({"video_id": ["a", "b"], "video_title": ["t1", "t2"]})
         schema = {"video_id": pa.string(), "video_title": pa.string()}
         result = load_data_to_bq(table, "test_table", "test_dataset", schema)
         assert result == 2
-        mock_write.assert_called_once()
+        mock_client.load_table_from_file.assert_called_once()
 
-    @patch("src.main.pa_bq.write_table", side_effect=Exception("BQ error"))
-    def test_raises_on_failure(self, mock_write: MagicMock) -> None:
+    @patch("src.main.bigquery.Client")
+    def test_raises_on_failure(self, mock_client_cls: MagicMock) -> None:
+        mock_client = mock_client_cls.return_value
+        mock_job = MagicMock()
+        mock_job.result.side_effect = Exception("BQ error")
+        mock_client.load_table_from_file.return_value = mock_job
         table = pa.table({"video_id": ["a"], "video_title": ["t1"]})
         schema = {"video_id": pa.string(), "video_title": pa.string()}
         with pytest.raises(Exception, match="BQ error"):
             load_data_to_bq(table, "test_table", "test_dataset", schema)
+
+
+# ---------------------------------------------------------------------------
+# _run_report (mocked API)
+# ---------------------------------------------------------------------------
+
+class TestRunReport:
+    """Tests _run_report with different BQ schemas.
+
+    Uses dates 2026-02-01 to 2026-02-07 and two video IDs.
+    The YouTube Analytics API is mocked to return realistic column headers
+    and row data matching each schema.
+    """
+
+    START_DATE = "2026-02-01"
+    END_DATE = "2026-02-07"
+    VIDEO_IDS = ["zbkxWchTyBU", "ALvIYIC1IqE", "AGFWRIN7WlI", "O6UNpjQnphY", "YaMjajmDbG0", "FvtNyOVK4t8"]
+
+    def _mock_service_with_response(self, column_names: list[str], rows: list[list]) -> MagicMock:
+        """Creates a mock YouTube Analytics service that returns the given columns and rows."""
+        mock_service = MagicMock()
+        mock_service.reports().query().execute.return_value = {
+            "columnHeaders": [{"name": name} for name in column_names],
+            "rows": rows,
+        }
+        return mock_service
+
+    def test_user_activity_schema(self) -> None:
+        columns = list(USER_ACTIVITY_BQ_SCHEMA.keys())
+        row = [
+            "2026-02-01",  # day
+            10, 100, 5, 3, 8, 1, 2,  # int metrics
+            50.0, 5.0, 120.0, 45.0,  # float metrics
+            0.05, 0.02, 200, 180, 150, 9, 3,  # annotation metrics
+            0.1, 0.08, 300, 250, 30, 20,  # card metrics
+        ]
+        mock_service = self._mock_service_with_response(columns, [row])
+        result = _run_report(
+            mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
+            USER_ACTIVITY_BQ_SCHEMA,
+            get_user_activity_single_video_single_day_config,
+            "User Activity",
+        )
+        assert isinstance(result, pa.Table)
+        expected_columns = list(_with_video_id(USER_ACTIVITY_BQ_SCHEMA).keys())
+        assert result.column_names == expected_columns
+        assert "video_id" in result.column_names
+        # Six videos, each returning 1 row
+        assert result.num_rows == 6
+        assert set(result.column("video_id").to_pylist()) == set(self.VIDEO_IDS)
+
+    def test_playback_details_schema(self) -> None:
+        columns = list(PLAYBACK_DETAILS_BQ_SCHEMA.keys())
+        row = [
+            "2026-02-01",  # day
+            "SHORTS",  # creatorContentType
+            5, 50, 2,  # int metrics
+            25.0, 3.0, 60.0, 30.0,  # float metrics
+        ]
+        mock_service = self._mock_service_with_response(columns, [row])
+        result = _run_report(
+            mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
+            PLAYBACK_DETAILS_BQ_SCHEMA,
+            get_playback_details_single_video_single_day_config,
+            "Playback Details",
+        )
+        assert isinstance(result, pa.Table)
+        expected_columns = list(_with_video_id(PLAYBACK_DETAILS_BQ_SCHEMA).keys())
+        assert result.column_names == expected_columns
+        assert result.num_rows == 6
+        assert result.column("creatorContentType").to_pylist() == ["SHORTS"] * 6
+
+    def test_playback_location_schema(self) -> None:
+        columns = list(PLAYBACK_LOCATION_BQ_SCHEMA.keys())
+        row = [
+            "2026-02-01",  # day
+            "WATCH",  # insightPlaybackLocationType
+            "VIDEO",  # creatorContentType
+            8, 80,  # int metrics
+            40.0,  # float metric
+        ]
+        mock_service = self._mock_service_with_response(columns, [row])
+        result = _run_report(
+            mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
+            PLAYBACK_LOCATION_BQ_SCHEMA,
+            get_playback_locations_single_video_single_day_config,
+            "Playback Location",
+        )
+        assert isinstance(result, pa.Table)
+        expected_columns = list(_with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA).keys())
+        assert result.column_names == expected_columns
+        assert result.num_rows == 6
+        assert result.column("insightPlaybackLocationType").to_pylist() == ["WATCH"] * 6
+
+    def test_traffic_sources_schema(self) -> None:
+        columns = list(TRAFFIC_SOURCES_BQ_SCHEMA.keys())
+        row = [
+            "2026-02-01",  # day
+            "YT_SEARCH",  # insightTrafficSourceType
+            "VIDEO",  # creatorContentType
+            12, 120,  # int metrics
+            60.0,  # float metric
+        ]
+        mock_service = self._mock_service_with_response(columns, [row])
+        result = _run_report(
+            mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
+            TRAFFIC_SOURCES_BQ_SCHEMA,
+            get_traffic_sources_single_video_single_day_config,
+            "Traffic Sources",
+        )
+        assert isinstance(result, pa.Table)
+        expected_columns = list(_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA).keys())
+        assert result.column_names == expected_columns
+        assert result.num_rows == 6
+        assert result.column("insightTrafficSourceType").to_pylist() == ["YT_SEARCH"] * 6
+
+    def test_returns_empty_table_when_no_rows(self) -> None:
+        columns = list(TRAFFIC_SOURCES_BQ_SCHEMA.keys())
+        mock_service = self._mock_service_with_response(columns, [])
+        result = _run_report(
+            mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
+            TRAFFIC_SOURCES_BQ_SCHEMA,
+            get_traffic_sources_single_video_single_day_config,
+            "Traffic Sources",
+        )
+        assert isinstance(result, pa.Table)
+        assert result.num_rows == 0
+        expected_columns = list(_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA).keys())
+        assert result.column_names == expected_columns
+
+    def test_multiple_rows_per_video(self) -> None:
+        columns = list(PLAYBACK_DETAILS_BQ_SCHEMA.keys())
+        rows = [
+            ["2026-02-01", "VIDEO", 5, 50, 2, 25.0, 3.0, 60.0, 30.0],
+            ["2026-02-02", "SHORTS", 3, 30, 1, 15.0, 1.0, 45.0, 20.0],
+        ]
+        mock_service = self._mock_service_with_response(columns, rows)
+        result = _run_report(
+            mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
+            PLAYBACK_DETAILS_BQ_SCHEMA,
+            get_playback_details_single_video_single_day_config,
+            "Playback Details",
+        )
+        assert isinstance(result, pa.Table)
+        # 6 videos * 2 rows each = 12
+        assert result.num_rows == 12
+
+    def test_single_video_id(self) -> None:
+        columns = list(USER_ACTIVITY_BQ_SCHEMA.keys())
+        row = [
+            "2026-02-01", 10, 100, 5, 3, 8, 1, 2,
+            50.0, 5.0, 120.0, 45.0,
+            0.05, 0.02, 200, 180, 150, 9, 3,
+            0.1, 0.08, 300, 250, 30, 20,
+        ]
+        mock_service = self._mock_service_with_response(columns, [row])
+        result = _run_report(
+            mock_service, ["single_vid"], self.START_DATE, self.END_DATE,
+            USER_ACTIVITY_BQ_SCHEMA,
+            get_user_activity_single_video_single_day_config,
+            "User Activity",
+        )
+        assert result.num_rows == 1
+        assert result.column("video_id").to_pylist() == ["single_vid"]
 
 
 # ---------------------------------------------------------------------------
