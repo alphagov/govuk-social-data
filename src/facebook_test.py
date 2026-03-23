@@ -91,13 +91,6 @@ def _refresh_access_token(app_id: str, app_secret: str, long_lived_token: str) -
 
 def _build_service() -> GraphAPI:
     """Builds an authenticated Facebook GraphAPI client.
-
-    Mirrors main.py's _build_service pattern:
-    1. Check local token cache — if valid, use it.
-    2. Otherwise, pull credentials from GCP Secret Manager.
-    3. Exchange the long-lived token for a fresh access token.
-    4. Cache the new token locally.
-    5. Return a GraphAPI client.
     """
     cached_token = _load_token_cache()
     if cached_token:

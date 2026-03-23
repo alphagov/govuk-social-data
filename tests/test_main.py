@@ -14,12 +14,12 @@ from src.main import (
     _with_video_id,
     chunk_video_ids,
     generate_date_ranges,
-    get_playback_details_single_video_single_day_config,
-    get_playback_locations_single_video_single_day_config,
+    get_playback_details_single_video_config,
+    get_playback_locations_single_video_config,
     get_top_200_videos_for_date_range,
-    get_traffic_sources_single_video_single_day_config,
+    get_traffic_sources_single_video_config,
     get_user_activity_single_video_single_day,
-    get_user_activity_single_video_single_day_config,
+    get_user_activity_single_video_config,
     get_video_metadata,
     get_video_titles,
     get_youtube_analytics_api_v2_service,
@@ -402,7 +402,7 @@ class TestRunReport:
         result = _run_report(
             mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
             USER_ACTIVITY_BQ_SCHEMA,
-            get_user_activity_single_video_single_day_config,
+            get_user_activity_single_video_config,
             "User Activity",
         )
         assert isinstance(result, pa.Table)
@@ -425,7 +425,7 @@ class TestRunReport:
         result = _run_report(
             mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
             PLAYBACK_DETAILS_BQ_SCHEMA,
-            get_playback_details_single_video_single_day_config,
+            get_playback_details_single_video_config,
             "Playback Details",
         )
         assert isinstance(result, pa.Table)
@@ -447,7 +447,7 @@ class TestRunReport:
         result = _run_report(
             mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
             PLAYBACK_LOCATION_BQ_SCHEMA,
-            get_playback_locations_single_video_single_day_config,
+            get_playback_locations_single_video_config,
             "Playback Location",
         )
         assert isinstance(result, pa.Table)
@@ -469,7 +469,7 @@ class TestRunReport:
         result = _run_report(
             mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
             TRAFFIC_SOURCES_BQ_SCHEMA,
-            get_traffic_sources_single_video_single_day_config,
+            get_traffic_sources_single_video_config,
             "Traffic Sources",
         )
         assert isinstance(result, pa.Table)
@@ -484,7 +484,7 @@ class TestRunReport:
         result = _run_report(
             mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
             TRAFFIC_SOURCES_BQ_SCHEMA,
-            get_traffic_sources_single_video_single_day_config,
+            get_traffic_sources_single_video_config,
             "Traffic Sources",
         )
         assert isinstance(result, pa.Table)
@@ -502,7 +502,7 @@ class TestRunReport:
         result = _run_report(
             mock_service, self.VIDEO_IDS, self.START_DATE, self.END_DATE,
             PLAYBACK_DETAILS_BQ_SCHEMA,
-            get_playback_details_single_video_single_day_config,
+            get_playback_details_single_video_config,
             "Playback Details",
         )
         assert isinstance(result, pa.Table)
@@ -521,7 +521,7 @@ class TestRunReport:
         result = _run_report(
             mock_service, ["single_vid"], self.START_DATE, self.END_DATE,
             USER_ACTIVITY_BQ_SCHEMA,
-            get_user_activity_single_video_single_day_config,
+            get_user_activity_single_video_config,
             "User Activity",
         )
         assert result.num_rows == 1

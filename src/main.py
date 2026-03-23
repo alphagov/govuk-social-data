@@ -17,6 +17,7 @@ import io
 import pyarrow as pa
 import pyarrow.parquet as pq
 from google.cloud import bigquery
+import requests
 
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ PROJECT_ID = "gds-social-data"
 CLIENT_ID_STRING_SECRET = "youtube-processing-client-id-web-app"
 CLIENT_SECRET_STRING_SECRET = "youtube-processing-client-secret-web-app"
 CHANNEL_ID = "UCSNK6abAoM6Kj0SkHOStNLg"
-TOKEN_SECRET_VERSION= "7"  # token version or "latest"
+TOKEN_SECRET_VERSION= "8"  # token version or "latest"
 TOKEN_JSON_SECRET = "youtube-processing-web-client-token-json"
 TOKEN_CACHE_PATH = os.path.expanduser("~/.config/youtube_exploration/token_cache.json")
 
@@ -56,9 +57,9 @@ youtube_traffic_sources = {
 }
 
 
-# Daily reports
+# Reports that can be over a wide date time, with day dimension
 
-def get_user_activity_single_video_single_day_config(video_id:str) -> dict[str, Any]:
+def get_user_activity_single_video_config(video_id:str) -> dict[str, Any]:
     """Returns the configuration for retrieving user activity metrics for a single video on a daily basis.
     This function has been replaced by generic_report_config but is useful for troubleshooting"""
     return {
@@ -67,7 +68,8 @@ def get_user_activity_single_video_single_day_config(video_id:str) -> dict[str, 
         "filters"   : f"video=={video_id}"
     }   
 
-def get_playback_details_single_video_single_day_config(video_id:str) -> dict[str, Any]:
+
+def get_playback_details_single_video_config(video_id:str) -> dict[str, Any]:
     """Returns the configuration for retrieving playback details metrics for a single video on a daily basis.
     Note the creatorContentType, informs us if its a video,short or live stream, this is important as some metrics are only available for certain content types, e.g. engagedViews is not available for shorts."""
     return {
@@ -76,7 +78,7 @@ def get_playback_details_single_video_single_day_config(video_id:str) -> dict[st
         "filters"   : f"video=={video_id}"
     }
 
-def get_playback_locations_single_video_single_day_config(video_id:str) -> dict[str, Any]:
+def get_playback_locations_single_video_config(video_id:str) -> dict[str, Any]:
     """Returns the configuration for retrieving playback location metrics for a single video on a daily basis.
     Note that insightPlaybackLocationType dimension informs us where the video was played e.g. on YouTube watch page, embedded on another website, etc. This is important as some metrics are only available for certain playback locations, e.g. engagedViews is not available for embedded playback location type.
     https://developers.google.com/youtube/analytics/channel_reports?_gl=1*a9sxfc*_up*MQ..*_ga*MTMwNjgyMDgyLjE3NzE4NjMzMDg.*_ga_SM8HXJ53K2*czE3NzE4NjMzMDgkbzEkZzAkdDE3NzE4NjMzMDgkajYwJGwwJGgw
@@ -87,7 +89,7 @@ def get_playback_locations_single_video_single_day_config(video_id:str) -> dict[
         "filters"   : f"video=={video_id}"
     }
 
-def get_traffic_sources_single_video_single_day_config(video_id:str) -> dict[str, Any]:
+def get_traffic_sources_single_video_config(video_id:str) -> dict[str, Any]:
     """
     note that traffic sources requires insightTrafficSourcesTypes allows single day, traffic sources detials does not allow day dimension
     https://developers.google.com/youtube/analytics/v1/dimsmets/dims?_gl=1*1cm8ijd*_up*MQ..*_ga*ODQxMTE1NjkzLjE3NzI2NDI5NjA.*_ga_SM8HXJ53K2*czE3NzI2NDI5NTkkbzEkZzAkdDE3NzI2NDI5NTkkajYwJGwwJGgw#Traffic_Source_Dimensions 
@@ -99,7 +101,7 @@ def get_traffic_sources_single_video_single_day_config(video_id:str) -> dict[str
         "filters"   : f"video=={video_id}"
 }
 
-def get_operating_system_and_device_type_config(video_id:str) -> dict[str, Any]:
+def get_operating_system_and_device_type_single_video_config(video_id:str) -> dict[str, Any]:
     """Returns the configuration for retrieving OS and device type metrics for a single video on a daily basis."""
     return {
         "dimensions":"day,deviceType,operatingSystem",
@@ -124,6 +126,16 @@ def get_engagement_and_content_sharing_config(video_id:str) -> dict[str, Any]:
         "metrics"   :"shares",
         "filters"   :f"video=={video_id}"
     }
+
+def get_user_activity_by_country_single_video_single_day_config(video_id:str,country_code:str) -> dict[str, Any]:
+    """Returns the configuration for retrieving user activity metrics for a single video on a daily basis.
+    This function has been replaced by generic_report_config but is useful for troubleshooting"""
+    return {
+        "dimensions":"day",
+        "metrics"   :"engagedViews,views,redViews,comments,likes,dislikes,shares,estimatedMinutesWatched,estimatedRedMinutesWatched,averageViewDuration,averageViewPercentage,annotationClickThroughRate,annotationCloseRate,annotationImpressions,annotationClickableImpressions,annotationClosableImpressions,annotationClicks,annotationCloses,cardClickRate,cardTeaserClickRate,cardImpressions,cardTeaserImpressions,cardClicks,cardTeaserClicks",
+        "filters"   : f"video=={video_id},country=={country_code}"
+    }   
+
 
 ## Reports not implemented
 # playback location detail as it only shows information for insightPlaybackLocationType==Embedded and does not allow dim by day
@@ -165,6 +177,7 @@ VIDEO_METADATA_BQ_SCHEMA = {
 
 USER_ACTIVITY_BQ_SCHEMA = {
     "day":                              pa.date32(),
+    "country":                          pa.int64(),
     "engagedViews":                     pa.int64(),
     "views":                            pa.int64(),
     "redViews":                         pa.int64(),
@@ -346,7 +359,7 @@ def get_top_200_videos_for_date_range(youtube_service: Resource, start_date: str
         video_ids.update(row[0] for row in rows)
         if len(rows) >= 200:
             logger.warning("Retrieved %d rows (max per request). Consider shortening the date range.", len(rows))
-
+        time.sleep(0.1)
     logger.info("Found %d unique videos", len(video_ids))
     return pa.table({"video": list(video_ids)})
 
@@ -431,6 +444,8 @@ def _load_token_cache(client_id: str, client_secret: str) -> Credentials | None:
             return None
         try:
             credentials.refresh(Request())
+            logger.info("Token scopes: %s", credentials.scopes)
+            logger.info("Granted scopes: %s", credentials.granted_scopes)
         except Exception:
             logger.warning("Failed to refresh cached token, will re-fetch from Secret Manager")
             return None
@@ -487,7 +502,7 @@ def _build_service(api_name: str, version: str, scopes: list[str]) -> Resource:
 
 def get_youtube_analytics_api_v2_service() -> Resource:
     """Builds and returns an authenticated YouTube Analytics API v2 service client."""
-    return _build_service("youtubeAnalytics", "v2", ["https://www.googleapis.com/auth/yt-analytics.readonly"])
+    return _build_service("youtubeAnalytics", "v2", ["https://www.googleapis.com/auth/yt-analytics.readonly","https://www.googleapis.com/auth/youtube.readonly"])
 
 def get_youtube_data_api_v3_service() -> Resource:
     """Builds and returns an authenticated YouTube Data API v3 service client."""
@@ -634,7 +649,7 @@ def fetch_daily_report_for_all_videos(
     tables = []
     failed_ids = []
     for id in video_ids:
-        logger.info("Video ID from BQ: %s", id)
+        logger.info("Running %s report for Video ID from BQ: %s", config_fn, id)
         try:
             table = generic_analytics_report(youtube_analytics_service, start_date=start_date, end_date=end_date, **config_fn(id))
         except HttpError as e:
@@ -647,6 +662,11 @@ def fetch_daily_report_for_all_videos(
                     logger.warning("Failed to fetch report for video %s after rate limit retry, skipping", id, exc_info=True)
                     failed_ids.append(id)
                     continue
+            if e.resp.status ==400:
+                logger.warning("Incorrect Query found for report with schema %s for video id %s,check the query is supported",(config_fn, id), exc_info=True)
+                logger.error("Ending report")
+                failed_ids.append(id)
+                break
             else:
                 logger.warning("Failed to fetch report for video %s, skipping", id, exc_info=True)
                 failed_ids.append(id)
@@ -699,32 +719,33 @@ def generic_analytics_report(youtube_service: Resource, start_date: str, end_dat
 def main() -> None:
     """Entry point: discovers video IDs, fetches metadata, and runs daily analytics reports."""
     logging.basicConfig(level=logging.INFO)
-    RUN_DAILY_REPORTS = True
+    RUN_DAILY_REPORTS = False
     REFRESH_YOUTUBE_IDS_AND_METADATA = False  # set to True to refresh the list of video IDs (will create up to 200 new videos per date range chunk)
     SMALL_SAMPLE = False  # set to True to only run analytics report for a small sample of videos (will use hardcoded video IDs instead of retrieving from BQ)
-    RUN_PERIODIC_REPORTS= False# perform the multi month demogrpahic, device and engagement analysis
-    START_DATE = "2021-01-01"
-    END_DATE = "2022-12-31"
+    RUN_PERIODIC_REPORTS= True # perform the multi month demogrpahic, device and engagement analysis
+    START_DATE = "2024-01-01"
+    END_DATE = "2025-01-01"
     try:
         youtube_analytics_service = get_youtube_analytics_api_v2_service()
         youtube_data_service = get_youtube_data_api_v3_service()
 
         ## Step 1: Get video IDs for the channel in the date range using Analytics API v2
         if REFRESH_YOUTUBE_IDS_AND_METADATA:
-            START_DATE = "2024-01-01"
-            END_DATE = "2026-03-01"
             ### create_vido_ids using Analytics API v2 - could be replaced now we have Youtube Data API v3 access, but leaving as is for now to avoid hitting Data API quota limits during development
             youtube_id_table = get_top_200_videos_for_date_range(youtube_analytics_service, start_date=START_DATE, end_date=END_DATE)
 
             ### Youtube Data API v3 functions
             ## Given video_ids, get titles
+            logger.info("Granted scopes: %s", youtube_data_service._http.credentials.scopes)
+            logger.info("Has granted scopes: %s", youtube_data_service._http.credentials.granted_scopes)
+
             vido_ids_titles_table = get_video_titles(youtube_data_service ,youtube_id_table["video"].to_pylist())
-            logger.info("Video ID titles:\n%s", vido_ids_titles_table)
+            logger.debug("Video ID titles:\n%s", vido_ids_titles_table)
             load_data_to_bq( vido_ids_titles_table ,"video_id_title_mapping","govuk_youtube_channel_staging",VIDEO_ID_BQ_SCHEMA)
 
-            ## Given video_ids, get metatdata 
+            # Given video_ids, get metatdata  s
             youtube_ids_with_metadata_mapping_table = get_video_metadata(youtube_data_service, youtube_id_table["video"].to_pylist())
-            logger.info("Video metadata:\n%s", youtube_ids_with_metadata_mapping_table)
+            logger.debug("Video metadata:\n%s", youtube_ids_with_metadata_mapping_table)
             load_data_to_bq( youtube_ids_with_metadata_mapping_table ,"video_id_metadata_mapping","govuk_youtube_channel_staging",VIDEO_METADATA_BQ_SCHEMA)
         elif SMALL_SAMPLE:
         #small sample 
@@ -734,36 +755,39 @@ def main() -> None:
             logger.info("Skipping video ID and metadata retrieval. Set REFRESH_YOUTUBE_IDS_AND_METADATA to True to enable.")
             youtube_ids_with_metadata_mapping_table =retrieve_data_from_bq(PROJECT_ID, "govuk_youtube_channel_staging","video_id_metadata_mapping")
         
-        ## Daily Reports
+            ## Daily Reports
         video_ids = youtube_ids_with_metadata_mapping_table["video_id"].to_pylist()
+        ## Daily Reports
+        if RUN_DAILY_REPORTS:
 
-        # ## Youtube Analytics API v2 services
+            # ## Youtube Analytics API v2 services
+            ## This must be run per day due to being unable to filter by both country and date
+            user_activity_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
+                USER_ACTIVITY_BQ_SCHEMA, get_user_activity_single_video_config, "User Activity")
+            load_data_to_partitioned_bq(user_activity_table,'user_activity','govuk_youtube_channel_staging',_with_video_id(USER_ACTIVITY_BQ_SCHEMA), time_partition_field="day")
 
-        user_activity_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            USER_ACTIVITY_BQ_SCHEMA, get_user_activity_single_video_single_day_config, "User Activity")
-        load_data_to_partitioned_bq(user_activity_table,'user_activity','govuk_youtube_channel_staging',_with_video_id(USER_ACTIVITY_BQ_SCHEMA), time_partition_field="day")
+            playback_details_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
+                PLAYBACK_DETAILS_BQ_SCHEMA, get_playback_details_single_video_config, "Playback Details")
+            load_data_to_partitioned_bq(playback_details_table,'playback_details','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_DETAILS_BQ_SCHEMA), time_partition_field="day")
 
-        playback_details_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            PLAYBACK_DETAILS_BQ_SCHEMA, get_playback_details_single_video_single_day_config, "Playback Details")
-        load_data_to_partitioned_bq(playback_details_table,'playback_details','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_DETAILS_BQ_SCHEMA), time_partition_field="day")
+            # playback_location_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
+            #     PLAYBACK_LOCATION_BQ_SCHEMA, get_playback_locations_single_video_single_day_config, "Playback Location")
+            # load_data_to_partitioned_bq(playback_location_table,'playback_location','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA), time_partition_field="day")
 
-        playback_location_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            PLAYBACK_LOCATION_BQ_SCHEMA, get_playback_locations_single_video_single_day_config, "Playback Location")
-        load_data_to_partitioned_bq(playback_location_table,'playback_location','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA), time_partition_field="day")
+            # traffic_sources_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
+            #     TRAFFIC_SOURCES_BQ_SCHEMA, get_traffic_sources_single_video_single_day_config, "Traffic Sources")
+            # load_data_to_partitioned_bq(traffic_sources_table,'traffic_sources','govuk_youtube_channel_staging',_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA), time_partition_field="day")
 
-        traffic_sources_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            TRAFFIC_SOURCES_BQ_SCHEMA, get_traffic_sources_single_video_single_day_config, "Traffic Sources")
-        load_data_to_partitioned_bq(traffic_sources_table,'traffic_sources','govuk_youtube_channel_staging',_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA), time_partition_field="day")
-
-        operating_system_and_device_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA, get_operating_system_and_device_type_config, "Operating System and Device")
-        load_data_to_partitioned_bq(operating_system_and_device_table,'operating_system_and_device','govuk_youtube_channel_staging',_with_video_id(OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA), time_partition_field="day")
+            # operating_system_and_device_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
+            #     OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA, get_operating_system_and_device_type_config, "Operating System and Device")
+            # load_data_to_partitioned_bq(operating_system_and_device_table,'operating_system_and_device','govuk_youtube_channel_staging',_with_video_id(OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA), time_partition_field="day")
 
         if RUN_PERIODIC_REPORTS:
             # START_DATE = "2025-01-01"
             # END_DATE = "2026-03-11"
             START_DATE = "2025-01-01"
             END_DATE = "2026-01-10"
+
 
             # operating_system_and_device_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
             #     OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA, get_operating_system_and_device_type_config, "Operating System and Device")
