@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 
+import argparse
 import json
-import time 
+import time
 import logging
 import os
 import re
+from functools import partial
 from typing import Any, Callable
 import googleapiclient.discovery
 from googleapiclient.discovery import Resource
@@ -127,15 +129,14 @@ def get_engagement_and_content_sharing_config(video_id:str) -> dict[str, Any]:
         "filters"   :f"video=={video_id}"
     }
 
-def get_user_activity_by_country_single_video_single_day_config(video_id:str,country_code:str) -> dict[str, Any]:
+def get_user_activity_by_country_code_single_video_single_day_config(video_id:str,country_code:str) -> dict[str, Any]:
     """Returns the configuration for retrieving user activity metrics for a single video on a daily basis.
     This function has been replaced by generic_report_config but is useful for troubleshooting"""
     return {
         "dimensions":"day",
         "metrics"   :"engagedViews,views,redViews,comments,likes,dislikes,shares,estimatedMinutesWatched,estimatedRedMinutesWatched,averageViewDuration,averageViewPercentage,annotationClickThroughRate,annotationCloseRate,annotationImpressions,annotationClickableImpressions,annotationClosableImpressions,annotationClicks,annotationCloses,cardClickRate,cardTeaserClickRate,cardImpressions,cardTeaserImpressions,cardClicks,cardTeaserClicks",
-        "filters"   : f"video=={video_id},country=={country_code}"
-    }   
-
+        "filters"   : f"video=={video_id};country=={country_code}"
+    }     
 
 ## Reports not implemented
 # playback location detail as it only shows information for insightPlaybackLocationType==Embedded and does not allow dim by day
@@ -177,7 +178,6 @@ VIDEO_METADATA_BQ_SCHEMA = {
 
 USER_ACTIVITY_BQ_SCHEMA = {
     "day":                              pa.date32(),
-    "country":                          pa.int64(),
     "engagedViews":                     pa.int64(),
     "views":                            pa.int64(),
     "redViews":                         pa.int64(),
@@ -254,6 +254,34 @@ ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA = {
     "shares":                           pa.int64(),
 }
 
+
+USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA = {
+    "day":                              pa.date32(),
+    "engagedViews":                     pa.int64(),
+    "views":                            pa.int64(),
+    "redViews":                         pa.int64(),
+    "comments":                         pa.int64(),
+    "likes":                            pa.int64(),
+    "dislikes":                         pa.int64(),
+    "shares":                           pa.int64(),
+    "estimatedMinutesWatched":          pa.float64(),
+    "estimatedRedMinutesWatched":       pa.float64(),
+    "averageViewDuration":              pa.float64(),
+    "averageViewPercentage":            pa.float64(),
+    "annotationClickThroughRate":       pa.float64(),
+    "annotationCloseRate":              pa.float64(),
+    "annotationImpressions":            pa.int64(),
+    "annotationClickableImpressions":   pa.int64(),
+    "annotationClosableImpressions":    pa.int64(),
+    "annotationClicks":                 pa.int64(),
+    "annotationCloses":                 pa.int64(),
+    "cardClickRate":                    pa.float64(),
+    "cardTeaserClickRate":              pa.float64(),
+    "cardImpressions":                  pa.int64(),
+    "cardTeaserImpressions":            pa.int64(),
+    "cardClicks":                       pa.int64(),
+    "cardTeaserClicks":                 pa.int64(),
+}
 # generated using GB region code + snippet https://developers.google.com/youtube/v3/docs/videoCategories/list
 VIDEO_CATEGORY_ID_TO_TITLE = {
     "1":  "Film & Animation",
@@ -515,6 +543,10 @@ def _with_video_id(schema: dict[str, pa.DataType]) -> dict[str, pa.DataType]:
     """Prepends a video_id field to a schema dict."""
     return {"video_id": pa.string(), **schema}
 
+def _with_country_code(schema: dict[str, pa.DataType]) -> dict[str, pa.DataType]:
+    """Prepends a country_code field to a schema dict."""
+    return {"country_code": pa.string(), **schema}
+
 def chunk_video_ids(video_id_set: set[str], chunk_size: int = 50) -> list[list[str]]:
     """Chunks a set of video ids into lists of size chunk_size."""
     video_id_list = list(video_id_set)
@@ -634,6 +666,31 @@ def _run_report(
                 label, len(table), time.time() - time_start)
     return table
 
+
+def _run_country_report(
+    youtube_service: Resource,
+    video_ids: list[str],
+    start_date: str,
+    end_date: str,
+    country_codes: list[str],
+) -> pa.Table:
+    """Fetches user activity reports per country code and combines them into a single table."""
+    full_country_schema = _with_country_code(_with_video_id(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA))
+    country_schema = pa.schema([(k, v) for k, v in full_country_schema.items()])
+    country_tables = []
+    for country_code in country_codes:
+        config_fn = partial(get_user_activity_by_country_code_single_video_single_day_config, country_code=country_code)
+        table = _run_report(youtube_service, video_ids, start_date, end_date,
+            USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA, config_fn, f"User Activity - {country_code}")
+        if len(table) > 0:
+            country_code_column = pa.array([country_code] * len(table), type=pa.string())
+            table = table.add_column(0, "country_code", country_code_column)
+            table = table.cast(country_schema)
+            country_tables.append(table)
+            time.sleep(0.25)
+
+    return pa.concat_tables(country_tables) if country_tables else country_schema.empty_table()
+
 def fetch_daily_report_for_all_videos(
     youtube_analytics_service: Resource,
     video_ids: list[str],
@@ -659,16 +716,16 @@ def fetch_daily_report_for_all_videos(
                 try:
                     table = generic_analytics_report(youtube_analytics_service, start_date=start_date, end_date=end_date, **config_fn(id))
                 except Exception:
-                    logger.warning("Failed to fetch report for video %s after rate limit retry, skipping", id, exc_info=True)
+                    logger.warning("Failed to fetch %s report for video %s after rate limit retry, skipping",config_fn, id, exc_info=True)
                     failed_ids.append(id)
                     continue
             if e.resp.status ==400:
-                logger.warning("Incorrect Query found for report with schema %s for video id %s,check the query is supported",(config_fn, id), exc_info=True)
+                logger.warning("Incorrect Query found for report with schema %s for video id %s, check the query is supported", config_fn, id, exc_info=True)
                 logger.error("Ending report")
                 failed_ids.append(id)
                 break
             else:
-                logger.warning("Failed to fetch report for video %s, skipping", id, exc_info=True)
+                logger.warning("Failed to fetch %s report for video %s, skipping",config_fn, id, exc_info=True)
                 failed_ids.append(id)
                 continue
         except Exception:
@@ -679,18 +736,18 @@ def fetch_daily_report_for_all_videos(
         table = table.add_column(0, "video_id", video_id_column)
         table = table.cast(schema)
         tables.append(table)
-        time.sleep(0.1)
+        time.sleep(0.75)
     if failed_ids:
         logger.warning("Failed to fetch report for %d videos: %s", len(failed_ids), failed_ids)
     return pa.concat_tables(tables) if tables else schema.empty_table()
 
-def generic_analytics_report(youtube_service: Resource, start_date: str, end_date: str, video_id: str | None = None, max_retries: int = 3, **kwargs: Any) -> pa.Table:
+def generic_analytics_report(youtube_service: Resource, start_date: str, end_date: str, max_retries: int = 3, **kwargs: Any) -> pa.Table:
     """Executes a YouTube Analytics API query with the given parameters and returns results as a pa.Table.
+    Filters (including video and country) should be provided via kwargs from the config function.
     Retries on transient HTTP 5xx errors with exponential backoff."""
-    if video_id is not None:
-        kwargs["filters"] = f"video=={video_id}"
     if start_date > end_date:
         raise ValueError(f"start_date ({start_date}) must be before or equal to end_date ({end_date})")
+    
     query_params: dict[str, Any] = {"ids": "channel==MINE", "startDate": start_date, "endDate": end_date, **kwargs}
     from googleapiclient.errors import HttpError
     for attempt in range(max_retries):
@@ -702,8 +759,8 @@ def generic_analytics_report(youtube_service: Resource, start_date: str, end_dat
         except HttpError as e:
             if e.resp.status >= 500 and attempt < max_retries - 1:
                 wait = 2 ** attempt
-                logger.warning("Transient API error (HTTP %d) for video %s, retrying in %ds (attempt %d/%d)",
-                               e.resp.status, video_id or "N/A", wait, attempt + 1, max_retries)
+                logger.warning("Transient API error (HTTP %d) for filters %s, retrying in %ds (attempt %d/%d)",
+                               e.resp.status, kwargs.get("filters", "N/A"), wait, attempt + 1, max_retries)
                 time.sleep(wait)
             else:
                 raise
@@ -716,18 +773,43 @@ def generic_analytics_report(youtube_service: Resource, start_date: str, end_dat
 
 ## main function
 
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for pipeline configuration."""
+    parser = argparse.ArgumentParser(description="YouTube Analytics data ingestion pipeline")
+    parser.add_argument("--run-daily-reports", action=argparse.BooleanOptionalAction, default=True,
+                        help="Run daily analytics reports per video (default: True)")
+    parser.add_argument("--refresh-youtube-ids-and-metadata", action=argparse.BooleanOptionalAction, default=False,
+                        help="Refresh the list of video IDs and metadata (default: False)")
+    parser.add_argument("--full-dataset", action=argparse.BooleanOptionalAction, default=True,
+                        help="Use full dataset or a small hardcoded sample of video IDs (default: True)")
+    parser.add_argument("--run-periodic-reports", action=argparse.BooleanOptionalAction, default=False,
+                        help="Run multi-month demographic, device and engagement analysis (default: False)")
+    parser.add_argument("--start-date", default="2025-01-08",
+                        help="Start date for queries in YYYY-MM-DD format (default: 2025-01-08)")
+    parser.add_argument("--end-date", default="2025-01-08",
+                        help="End date for queries in YYYY-MM-DD format (default: 2025-01-08)")
+    return parser.parse_args()
+
+
 def main() -> None:
     """Entry point: discovers video IDs, fetches metadata, and runs daily analytics reports."""
     logging.basicConfig(level=logging.INFO)
-    RUN_DAILY_REPORTS = False
-    REFRESH_YOUTUBE_IDS_AND_METADATA = False  # set to True to refresh the list of video IDs (will create up to 200 new videos per date range chunk)
-    SMALL_SAMPLE = False  # set to True to only run analytics report for a small sample of videos (will use hardcoded video IDs instead of retrieving from BQ)
-    RUN_PERIODIC_REPORTS= True # perform the multi month demogrpahic, device and engagement analysis
-    START_DATE = "2024-01-01"
-    END_DATE = "2025-01-01"
+    args = parse_args()
+    RUN_DAILY_REPORTS = args.run_daily_reports
+    REFRESH_YOUTUBE_IDS_AND_METADATA = args.refresh_youtube_ids_and_metadata
+    FULL_DATASET = args.full_dataset
+    RUN_PERIODIC_REPORTS = args.run_periodic_reports
+    START_DATE = args.start_date
+    END_DATE = args.end_date
+
+    TEST_DATASET = 'govuk_youtube_channel_testing'
+    STAGING_DATASSET='govuk_youtube_channel_staging'
     try:
         youtube_analytics_service = get_youtube_analytics_api_v2_service()
         youtube_data_service = get_youtube_data_api_v3_service()
+
+        set_of_country_codes = retrieve_data_from_bq(PROJECT_ID, 'govuk_youtube_channel_staging' ,"country_code_to_country_mapping")
+
 
         ## Step 1: Get video IDs for the channel in the date range using Analytics API v2
         if REFRESH_YOUTUBE_IDS_AND_METADATA:
@@ -741,46 +823,55 @@ def main() -> None:
 
             vido_ids_titles_table = get_video_titles(youtube_data_service ,youtube_id_table["video"].to_pylist())
             logger.debug("Video ID titles:\n%s", vido_ids_titles_table)
-            load_data_to_bq( vido_ids_titles_table ,"video_id_title_mapping","govuk_youtube_channel_staging",VIDEO_ID_BQ_SCHEMA)
+            load_data_to_bq( vido_ids_titles_table ,"video_id_title_mapping",TARGET_DATASET ,VIDEO_ID_BQ_SCHEMA)
 
             # Given video_ids, get metatdata  s
             youtube_ids_with_metadata_mapping_table = get_video_metadata(youtube_data_service, youtube_id_table["video"].to_pylist())
             logger.debug("Video metadata:\n%s", youtube_ids_with_metadata_mapping_table)
-            load_data_to_bq( youtube_ids_with_metadata_mapping_table ,"video_id_metadata_mapping","govuk_youtube_channel_staging",VIDEO_METADATA_BQ_SCHEMA)
-        elif SMALL_SAMPLE:
-        #small sample 
-            youtube_ids_with_metadata_mapping_table  = pa.Table.from_arrays([['zbkxWchTyBU', 'ALvIYIC1IqE', 'AGFWRIN7WlI', 'O6UNpjQnphY', 'YaMjajmDbG0', 'FvtNyOVK4t8']],names =["video_id"])
-        else:
+            load_data_to_bq( youtube_ids_with_metadata_mapping_table ,"video_id_metadata_mapping",TARGET_DATASET ,VIDEO_METADATA_BQ_SCHEMA)
+
+        if FULL_DATASET:
         # full data from BQ
             logger.info("Skipping video ID and metadata retrieval. Set REFRESH_YOUTUBE_IDS_AND_METADATA to True to enable.")
-            youtube_ids_with_metadata_mapping_table =retrieve_data_from_bq(PROJECT_ID, "govuk_youtube_channel_staging","video_id_metadata_mapping")
+            youtube_ids_with_metadata_mapping_table =retrieve_data_from_bq(PROJECT_ID, TARGET_DATASET ,"video_id_metadata_mapping")
+            country_codes = set_of_country_codes["country_code"].to_pylist()
+            TARGET_DATASET = STAGING_DATASSET
+        else:
+        #small sample 
+            # youtube_ids_with_metadata_mapping_table  = pa.Table.from_arrays([['zbkxWchTyBU', 'ALvIYIC1IqE', 'AGFWRIN7WlI', 'O6UNpjQnphY', 'YaMjajmDbG0', 'FvtNyOVK4t8']],names =["video_id"])
+            youtube_ids_with_metadata_mapping_table  = pa.Table.from_arrays([["4_1gld1PIkA","ucjmWjJ25Ho","USo1yHS5th0","GY-NpWFyu8w","xUZZKi94p6Q","RqZ9e1GXJLo","hs8sykCaf3E","I5gP62TX8aQ","1whaQq44Pew","oSZPWrZDINQ"]],names =["video_id"])
+            country_codes = ["GB", "US"]
+            TARGET_DATASET = TEST_DATASET
+
         
             ## Daily Reports
         video_ids = youtube_ids_with_metadata_mapping_table["video_id"].to_pylist()
         ## Daily Reports
         if RUN_DAILY_REPORTS:
 
-            # ## Youtube Analytics API v2 services
-            ## This must be run per day due to being unable to filter by both country and date
-            user_activity_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-                USER_ACTIVITY_BQ_SCHEMA, get_user_activity_single_video_config, "User Activity")
-            load_data_to_partitioned_bq(user_activity_table,'user_activity','govuk_youtube_channel_staging',_with_video_id(USER_ACTIVITY_BQ_SCHEMA), time_partition_field="day")
+            ## Youtube Analytics API v2 services
+            # This must be run per day due to being unable to filter by both country and date
+            # user_activity_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
+            #     USER_ACTIVITY_BQ_SCHEMA, get_user_activity_single_video_config, "User Activity")
+            # load_data_to_partitioned_bq(user_activity_table,'user_activity',TARGET_DATASET,_with_video_id(USER_ACTIVITY_BQ_SCHEMA), time_partition_field="day")
 
-            playback_details_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-                PLAYBACK_DETAILS_BQ_SCHEMA, get_playback_details_single_video_config, "Playback Details")
-            load_data_to_partitioned_bq(playback_details_table,'playback_details','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_DETAILS_BQ_SCHEMA), time_partition_field="day")
+            user_activity_with_country_table = _run_country_report(
+                youtube_analytics_service, video_ids, START_DATE, END_DATE, country_codes)
+            load_data_to_partitioned_bq(user_activity_with_country_table, 'user_activity_with_country',
+                TARGET_DATASET, _with_country_code(_with_video_id(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)),
+                time_partition_field="day")
 
             # playback_location_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            #     PLAYBACK_LOCATION_BQ_SCHEMA, get_playback_locations_single_video_single_day_config, "Playback Location")
-            # load_data_to_partitioned_bq(playback_location_table,'playback_location','govuk_youtube_channel_staging',_with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA), time_partition_field="day")
+            #     PLAYBACK_LOCATION_BQ_SCHEMA, get_playback_locations_single_video_config, "Playback Location")
+            # load_data_to_partitioned_bq(playback_location_table,'playback_location',TARGET_DATASET,_with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA), time_partition_field="day")
 
             # traffic_sources_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            #     TRAFFIC_SOURCES_BQ_SCHEMA, get_traffic_sources_single_video_single_day_config, "Traffic Sources")
-            # load_data_to_partitioned_bq(traffic_sources_table,'traffic_sources','govuk_youtube_channel_staging',_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA), time_partition_field="day")
+            #     TRAFFIC_SOURCES_BQ_SCHEMA, get_traffic_sources_single_video_config, "Traffic Sources")
+            # load_data_to_partitioned_bq(traffic_sources_table,'traffic_sources',TARGET_DATASET,_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA), time_partition_field="day")
 
             # operating_system_and_device_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            #     OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA, get_operating_system_and_device_type_config, "Operating System and Device")
-            # load_data_to_partitioned_bq(operating_system_and_device_table,'operating_system_and_device','govuk_youtube_channel_staging',_with_video_id(OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA), time_partition_field="day")
+            #     OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA, get_operating_system_and_device_type_single_video_config, "Operating System and Device")
+            # load_data_to_partitioned_bq(operating_system_and_device_table,'operating_system_and_device',TARGET_DATASET,_with_video_id(OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA), time_partition_field="day")
 
         if RUN_PERIODIC_REPORTS:
             # START_DATE = "2025-01-01"
@@ -788,18 +879,15 @@ def main() -> None:
             START_DATE = "2025-01-01"
             END_DATE = "2026-01-10"
 
+            # viewer_demographic_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
+            #     VIEWER_DEMOGRAPHICS_BQ_SCHEMA, get_viewer_demographics_config, "Viewer Demographics")
+            # load_data_to_bq(viewer_demographic_table,'viewer_demographic',TARGET_DATASET,_with_video_id(VIEWER_DEMOGRAPHICS_BQ_SCHEMA))
 
-            # operating_system_and_device_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            #     OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA, get_operating_system_and_device_type_config, "Operating System and Device")
-
-            viewer_demographic_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-                VIEWER_DEMOGRAPHICS_BQ_SCHEMA, get_viewer_demographics_config, "Viewer Demographics")
+            engagement_and_content_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
+                ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA, get_engagement_and_content_sharing_config, "Engagement and Content Sharing")
+            load_data_to_bq(engagement_and_content_table,'engagement_and_content_location',TARGET_DATASET, _with_video_id(ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA))
 
 
-            # engagement_and_content_table = _run_report(youtube_analytics_service, video_ids, START_DATE, END_DATE,
-            #     ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA, get_engagement_and_content_sharing_config, "Engagement and Content Sharing")
-            load_data_to_bq(viewer_demographic_table,'viewer_demographic','govuk_youtube_channel_staging',_with_video_id(VIEWER_DEMOGRAPHICS_BQ_SCHEMA))
-            # load_data_to_bq(engagement_and_content_table,'engagement_and_content_location','govuk_youtube_channel_staging', _with_video_id(ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA))
 
 
     except Exception:
