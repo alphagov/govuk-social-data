@@ -31,8 +31,7 @@ def main():
     scopes = ["https://www.googleapis.com/auth/yt-analytics.readonly"]
 
     credentials = get_credentials(scopes)
-    youtube_analytics = googleapiclient.discovery.build(
-        "youtubeAnalytics", "v2", credentials=credentials)
+    youtube_analytics = googleapiclient.discovery.build("youtubeAnalytics", "v2", credentials=credentials)
 
     request = youtube_analytics.reports().query(
         ids=f"channel=={CHANNEL_ID}",

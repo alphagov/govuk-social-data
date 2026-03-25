@@ -4,9 +4,9 @@ import json
 import logging
 import os
 from datetime import datetime
-from google.cloud import secretmanager
 
 import requests
+from google.cloud import secretmanager
 from pyfacebook import GraphAPI
 
 logger = logging.getLogger(__name__)
@@ -39,10 +39,13 @@ def _save_token_cache(access_token: str, expires_at: str | None = None) -> None:
     """Persists the Facebook access token to a local cache file."""
     os.makedirs(os.path.dirname(TOKEN_CACHE_PATH), exist_ok=True)
     with open(TOKEN_CACHE_PATH, "w") as f:
-        json.dump({
-            "access_token": access_token,
-            "expires_at": expires_at,
-        }, f)
+        json.dump(
+            {
+                "access_token": access_token,
+                "expires_at": expires_at,
+            },
+            f,
+        )
 
 
 def _load_token_cache() -> str | None:
@@ -80,9 +83,7 @@ def _refresh_access_token(app_id: str, app_secret: str, long_lived_token: str) -
     expires_in = data.get("expires_in")
     expires_at = None
     if expires_in:
-        expires_at = datetime.fromtimestamp(
-            datetime.now().timestamp() + expires_in
-        ).isoformat()
+        expires_at = datetime.fromtimestamp(datetime.now().timestamp() + expires_in).isoformat()
 
     _save_token_cache(access_token, expires_at)
     logger.info("Refreshed access token (expires_in=%s seconds)", expires_in)
@@ -90,8 +91,7 @@ def _refresh_access_token(app_id: str, app_secret: str, long_lived_token: str) -
 
 
 def _build_service() -> GraphAPI:
-    """Builds an authenticated Facebook GraphAPI client.
-    """
+    """Builds an authenticated Facebook GraphAPI client."""
     cached_token = _load_token_cache()
     if cached_token:
         logger.info("Using cached access token")

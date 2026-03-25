@@ -1,4 +1,4 @@
-### README 
+### README
 
 ## To run unit tests
 
@@ -91,18 +91,18 @@ poetry run python your_script.py
 ```
 
 
-### delete local cached credentials 
+### delete local cached credentials
 ```bash
 # running all tests
-rm ~/.config/youtube_exploration/token_cache.json 
+rm ~/.config/youtube_exploration/token_cache.json
 
-## running unit tests 
-poetry run pytest tests/test_main.py -m 
+## running unit tests
+poetry run pytest tests/test_main.py -m
 
-# running a subset of unit tests 
-poetry run pytest tests/test_main.py -m "not integration" 
+# running a subset of unit tests
+poetry run pytest tests/test_main.py -m "not integration"
 
-# run tests while only returning the number passed 
+# run tests while only returning the number passed
 poetry run pytest tests/test_main.py -m "not integration" -x -q 2>&1 | tail -30
 
 # to run only a single test by name and category

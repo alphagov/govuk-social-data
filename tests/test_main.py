@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 
-import logging
-import os
 from datetime import datetime
-from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
 import pytest
 
 from src.main import (
+    OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA,
+    PLAYBACK_DETAILS_BQ_SCHEMA,
+    PLAYBACK_LOCATION_BQ_SCHEMA,
+    TRAFFIC_SOURCES_BQ_SCHEMA,
+    USER_ACTIVITY_BQ_SCHEMA,
+    USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA,
     _iso8601_duration_to_seconds,
     _run_country_report,
     _run_report,
@@ -21,26 +24,16 @@ from src.main import (
     get_playback_locations_single_video_config,
     get_top_200_videos_for_date_range,
     get_traffic_sources_single_video_config,
-    get_user_activity_single_video_single_day,
     get_user_activity_single_video_config,
-    get_video_metadata,
     get_video_titles,
     get_youtube_analytics_api_v2_service,
     get_youtube_data_api_v3_service,
-    load_data_to_bq,
-    OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA,
-    PLAYBACK_DETAILS_BQ_SCHEMA,
-    PLAYBACK_LOCATION_BQ_SCHEMA,
-    TRAFFIC_SOURCES_BQ_SCHEMA,
-    USER_ACTIVITY_BQ_SCHEMA,
-    USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA,
-    VIDEO_CATEGORY_ID_TO_TITLE,
 )
-
 
 # ---------------------------------------------------------------------------
 # _iso8601_duration_to_seconds
 # ---------------------------------------------------------------------------
+
 
 class TestIso8601DurationToSeconds:
     def test_hours_minutes_seconds(self) -> None:
@@ -77,6 +70,7 @@ class TestIso8601DurationToSeconds:
 # ---------------------------------------------------------------------------
 # generate_date_ranges
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateDateRanges:
     def test_basic_weekly_ranges(self) -> None:
@@ -119,6 +113,7 @@ class TestGenerateDateRanges:
 # chunk_video_ids
 # ---------------------------------------------------------------------------
 
+
 class TestChunkVideoIds:
     def test_empty_set(self) -> None:
         assert chunk_video_ids(set()) == []
@@ -152,9 +147,11 @@ class TestChunkVideoIds:
         assert len(result) == 3
         assert all(len(chunk) == 1 for chunk in result)
 
+
 # ---------------------------------------------------------------------------
 # Integration tests — use YouTube APIs to verify auth works
 # ---------------------------------------------------------------------------
+
 
 class TestYouTubeAPIIntegration:
     """These tests authenticate against the real YouTube APIs.
@@ -163,9 +160,16 @@ class TestYouTubeAPIIntegration:
     """
 
     SMALL_SAMPLE_VIDEO_IDS = [
-        "4_1gld1PIkA", "ucjmWjJ25Ho", "USo1yHS5th0", "GY-NpWFyu8w",
-        "xUZZKi94p6Q", "RqZ9e1GXJLo", "hs8sykCaf3E", "I5gP62TX8aQ",
-        "1whaQq44Pew", "oSZPWrZDINQ",
+        "4_1gld1PIkA",
+        "ucjmWjJ25Ho",
+        "USo1yHS5th0",
+        "GY-NpWFyu8w",
+        "xUZZKi94p6Q",
+        "RqZ9e1GXJLo",
+        "hs8sykCaf3E",
+        "I5gP62TX8aQ",
+        "1whaQq44Pew",
+        "oSZPWrZDINQ",
     ]
 
     @pytest.mark.integration
@@ -173,8 +177,13 @@ class TestYouTubeAPIIntegration:
         """_run_report with user_activity config returns 10 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
         result = _run_report(
-            analytics_service, self.SMALL_SAMPLE_VIDEO_IDS, "2025-01-01", "2025-01-01",
-            USER_ACTIVITY_BQ_SCHEMA, get_user_activity_single_video_config, "User Activity",
+            analytics_service,
+            self.SMALL_SAMPLE_VIDEO_IDS,
+            "2025-01-01",
+            "2025-01-01",
+            USER_ACTIVITY_BQ_SCHEMA,
+            get_user_activity_single_video_config,
+            "User Activity",
         )
         assert isinstance(result, pa.Table)
         assert result.num_rows == 10
@@ -186,8 +195,13 @@ class TestYouTubeAPIIntegration:
         """_run_report with playback_details config returns 10 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
         result = _run_report(
-            analytics_service, self.SMALL_SAMPLE_VIDEO_IDS, "2025-01-01", "2025-01-01",
-            PLAYBACK_DETAILS_BQ_SCHEMA, get_playback_details_single_video_config, "Playback Details",
+            analytics_service,
+            self.SMALL_SAMPLE_VIDEO_IDS,
+            "2025-01-01",
+            "2025-01-01",
+            PLAYBACK_DETAILS_BQ_SCHEMA,
+            get_playback_details_single_video_config,
+            "Playback Details",
         )
         assert isinstance(result, pa.Table)
         assert result.num_rows == 10
@@ -199,8 +213,13 @@ class TestYouTubeAPIIntegration:
         """_run_report with playback_location config returns 18 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
         result = _run_report(
-            analytics_service, self.SMALL_SAMPLE_VIDEO_IDS, "2025-01-01", "2025-01-01",
-            PLAYBACK_LOCATION_BQ_SCHEMA, get_playback_locations_single_video_config, "Playback Location",
+            analytics_service,
+            self.SMALL_SAMPLE_VIDEO_IDS,
+            "2025-01-01",
+            "2025-01-01",
+            PLAYBACK_LOCATION_BQ_SCHEMA,
+            get_playback_locations_single_video_config,
+            "Playback Location",
         )
         assert isinstance(result, pa.Table)
         assert result.num_rows == 18
@@ -212,8 +231,13 @@ class TestYouTubeAPIIntegration:
         """_run_report with traffic_sources config returns 28 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
         result = _run_report(
-            analytics_service, self.SMALL_SAMPLE_VIDEO_IDS, "2025-01-01", "2025-01-01",
-            TRAFFIC_SOURCES_BQ_SCHEMA, get_traffic_sources_single_video_config, "Traffic Sources",
+            analytics_service,
+            self.SMALL_SAMPLE_VIDEO_IDS,
+            "2025-01-01",
+            "2025-01-01",
+            TRAFFIC_SOURCES_BQ_SCHEMA,
+            get_traffic_sources_single_video_config,
+            "Traffic Sources",
         )
         assert isinstance(result, pa.Table)
         assert result.num_rows == 28
@@ -225,9 +249,13 @@ class TestYouTubeAPIIntegration:
         """_run_report with operating_system_and_device config returns 40 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
         result = _run_report(
-            analytics_service, self.SMALL_SAMPLE_VIDEO_IDS, "2025-01-01", "2025-01-01",
+            analytics_service,
+            self.SMALL_SAMPLE_VIDEO_IDS,
+            "2025-01-01",
+            "2025-01-01",
             OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA,
-            get_operating_system_and_device_type_single_video_config, "Operating System and Device",
+            get_operating_system_and_device_type_single_video_config,
+            "Operating System and Device",
         )
         assert isinstance(result, pa.Table)
         assert result.num_rows == 40
@@ -239,7 +267,11 @@ class TestYouTubeAPIIntegration:
         """_run_country_report returns rows with country_code column for GB and US on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
         result = _run_country_report(
-            analytics_service, self.SMALL_SAMPLE_VIDEO_IDS, "2025-01-01", "2025-01-01", ["GB", "US"],
+            analytics_service,
+            self.SMALL_SAMPLE_VIDEO_IDS,
+            "2025-01-01",
+            "2025-01-01",
+            ["GB", "US"],
         )
         assert isinstance(result, pa.Table)
         assert result.num_rows == 3
