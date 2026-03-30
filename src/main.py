@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from functools import partial
 from typing import Any, Callable
@@ -469,7 +470,7 @@ def get_top_200_videos_for_date_range(
         video_ids.update(row[0] for row in rows)
         if len(rows) >= 200:
             logger.warning("Retrieved %d rows (max per request). Consider shortening the date range.", len(rows))
-        time.sleep(0.1)
+        # time.sleep(0.1)
     logger.info("Found %d unique videos", len(video_ids))
     return pa.table({"video": list(video_ids)})
 
@@ -765,6 +766,91 @@ def load_data_to_partitioned_bq(
         raise
 
 
+def load_data_to_partitioned_bq_merge(
+    table: pa.Table,
+    table_name: str,
+    dataset_name: str,
+    job_schema: dict[str, pa.DataType],
+    merge_keys: list[str],
+    time_partition_field: str = "day",
+) -> int:
+    """Loads data to a partitioned BigQuery table using a staging table with MERGE
+    to upsert rows without overwriting existing partition data.
+
+    Data is first loaded into a staging table, then a MERGE statement matches on
+    merge_keys to update existing rows and insert new ones.
+
+    Args:
+        table: The PyArrow table to load.
+        table_name: The target BigQuery table name.
+        dataset_name: The BigQuery dataset name.
+        job_schema: Column name to PyArrow type mapping for schema casting.
+        merge_keys: Columns that define row uniqueness for deduplication.
+        time_partition_field: The column used for time partitioning.
+
+    Returns:
+        The total number of rows loaded.
+    """
+    schema = pa.schema([(key, job_schema[key]) for key in job_schema])
+    cast_table = table.cast(schema)
+    target_table_id = f"{PROJECT_ID}.{dataset_name}.{table_name}"
+    staging_table_id = f"{PROJECT_ID}.{dataset_name}.{table_name}_staging"
+    client = bigquery.Client(project=PROJECT_ID)
+
+    # Step 1: Load all data into the staging table (WRITE_TRUNCATE is safe here)
+    staging_job_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.PARQUET,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        time_partitioning=bigquery.table.TimePartitioning(field=time_partition_field),
+    )
+    buf = io.BytesIO()
+    pq.write_table(cast_table, buf)
+    buf.seek(0)
+    job = client.load_table_from_file(buf, staging_table_id, job_config=staging_job_config)
+    job.result()
+    logger.info("Loaded %d rows to staging table %s", cast_table.num_rows, staging_table_id)
+
+    # Step 2: Create target table if it doesn't exist (using staging table schema)
+    try:
+        client.get_table(target_table_id)
+    except Exception:
+        staging_table_ref = client.get_table(staging_table_id)
+        target_table = bigquery.Table(target_table_id, schema=staging_table_ref.schema)
+        target_table.time_partitioning = bigquery.table.TimePartitioning(field=time_partition_field)
+        client.create_table(target_table)
+        logger.info("Created target table %s", target_table_id)
+
+    # Step 3: MERGE from staging into target
+    columns = list(job_schema.keys())
+    on_clause = " AND ".join(f"T.{k} = S.{k}" for k in merge_keys)
+    update_cols = [c for c in columns if c not in merge_keys]
+    update_set = ", ".join(f"T.{c} = S.{c}" for c in update_cols)
+    insert_columns = ", ".join(columns)
+    insert_values = ", ".join(f"S.{c}" for c in columns)
+
+    merge_sql = f"""
+    MERGE `{target_table_id}` T
+    USING `{staging_table_id}` S
+    ON {on_clause}
+    WHEN MATCHED THEN
+      UPDATE SET {update_set}
+    WHEN NOT MATCHED THEN
+      INSERT ({insert_columns})
+      VALUES ({insert_values})
+    """
+
+    try:
+        client.query(merge_sql).result()
+        logger.info("Merged %d rows into %s", cast_table.num_rows, target_table_id)
+        return cast_table.num_rows
+    except Exception:
+        logger.exception("Failed to merge into %s", target_table_id)
+        raise
+    finally:
+        client.delete_table(staging_table_id, not_found_ok=True)
+        logger.info("Cleaned up staging table %s", staging_table_id)
+
+
 def load_data_to_bq(table: pa.Table, table_name: str, dataset_name: str, job_schema: dict[str, pa.DataType]) -> int:
     """Casts a pa.Table to the given schema and writes it to a non-partitioned BigQuery table.
     Creates the table if it does not exist. Overwrites existing data.
@@ -830,16 +916,19 @@ def _run_report(
 
 
 def _run_country_report(
-    youtube_service: Resource,
     video_ids: list[str],
     start_date: str,
     end_date: str,
     country_codes: list[str],
-) -> pa.Table:
-    """Fetches user activity reports per country code and combines them into a single table."""
+    dataset_name: str,
+    table_name: str = "user_activity_with_country",
+) -> int:
+    """Fetches user activity reports per country code and loads each to BigQuery via MERGE.
+    Returns the total number of rows loaded."""
+    youtube_service = get_youtube_analytics_api_v2_service()
     full_country_schema = _with_country_code(_with_video_id(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA))
     country_schema = pa.schema([(k, v) for k, v in full_country_schema.items()])
-    country_tables = []
+    total_rows = 0
     for country_code in country_codes:
         config_fn = partial(
             get_user_activity_by_country_code_single_video_single_day_config, country_code=country_code
@@ -857,10 +946,17 @@ def _run_country_report(
             country_code_column = pa.array([country_code] * len(table), type=pa.string())
             table = table.add_column(0, "country_code", country_code_column)
             table = table.cast(country_schema)
-            country_tables.append(table)
-            time.sleep(0.25)
+            rows_loaded = load_data_to_partitioned_bq_merge(
+                table,
+                table_name,
+                dataset_name,
+                full_country_schema,
+                merge_keys=["country_code", "video_id", "day"],
+                time_partition_field="day",
+            )
+            total_rows += rows_loaded
 
-    return pa.concat_tables(country_tables) if country_tables else country_schema.empty_table()
+    return total_rows
 
 
 def fetch_daily_report_for_all_videos(
@@ -923,7 +1019,7 @@ def fetch_daily_report_for_all_videos(
         table = table.add_column(0, "video_id", video_id_column)
         table = table.cast(schema)
         tables.append(table)
-        time.sleep(0.75)
+        # time.sleep(0.2)
     if failed_ids:
         logger.warning("Failed to fetch report for %d videos: %s", len(failed_ids), failed_ids)
     return pa.concat_tables(tables) if tables else schema.empty_table()
@@ -1091,7 +1187,114 @@ def main() -> None:
 
             # Daily Reports
         video_ids = youtube_ids_with_metadata_mapping_table["video_id"].to_pylist()
-        # Daily Reports
+
+        country_codes = [
+            "BI",
+            "BN",
+            "BS",
+            "BY",
+            "CD",
+            "CI",
+            "CN",
+            "CV",
+            "CZ",
+            "DM",
+            "EE",
+            "ES",
+            "FK",
+            "GA",
+            "GF",
+            "GL",
+            "GQ",
+            "GU",
+            "HM",
+            "HU",
+            "IM",
+            "IR",
+            "JM",
+            "KG",
+            "KN",
+            "KY",
+            "LC",
+            "LS",
+            "LY",
+            "ME",
+            "MK",
+            "MO",
+            "MS",
+            "MW",
+            "NA",
+            "NG",
+            "NP",
+            "OM",
+            "PG",
+            "PM",
+            "PN",
+            "PT",
+            "PW",
+            "RE",
+            "RO",
+            "RS",
+            "RW",
+            "SA",
+            "SB",
+            "SC",
+            "SD",
+            "SE",
+            "SG",
+            "SH",
+            "SI",
+            "SJ",
+            "SK",
+            "SL",
+            "SM",
+            "SN",
+            "SO",
+            "SR",
+            "SS",
+            "ST",
+            "SV",
+            "SX",
+            "SY",
+            "SZ",
+            "TC",
+            "TD",
+            "TF",
+            "TG",
+            "TH",
+            "TJ",
+            "TK",
+            "TL",
+            "TM",
+            "TN",
+            "TO",
+            "TR",
+            "TT",
+            "TV",
+            "TW",
+            "TZ",
+            "UA",
+            "UG",
+            "UM",
+            "US",
+            "UY",
+            "UZ",
+            "VA",
+            "VC",
+            "VE",
+            "VG",
+            "VI",
+            "VN",
+            "VU",
+            "WF",
+            "WS",
+            "YE",
+            "YT",
+            "ZA",
+            "ZM",
+            "ZW",
+        ]
+        #    Daily Reports
         if RUN_DAILY_REPORTS:
 
             # Youtube Analytics API v2 services
@@ -1108,16 +1311,31 @@ def main() -> None:
             #     _with_video_id(USER_ACTIVITY_BQ_SCHEMA),
             #     time_partition_field="day")
 
-            user_activity_with_country_table = _run_country_report(
-                youtube_analytics_service, video_ids, START_DATE, END_DATE, country_codes
-            )
-            load_data_to_partitioned_bq(
-                user_activity_with_country_table,
-                "user_activity_with_country",
-                TARGET_DATASET,
-                _with_country_code(_with_video_id(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)),
-                time_partition_field="day",
-            )
+            num_workers = 4
+            country_code_chunks = [country_codes[i::num_workers] for i in range(num_workers)]
+
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _run_country_report,
+                        video_ids,
+                        START_DATE,
+                        END_DATE,
+                        chunk,
+                        TARGET_DATASET,
+                    ): i
+                    for i, chunk in enumerate(country_code_chunks)
+                    if chunk
+                }
+                total_country_rows = 0
+                for future in as_completed(futures):
+                    worker_id = futures[future]
+                    try:
+                        rows = future.result()
+                        total_country_rows += rows
+                        logger.info("Worker %d finished, loaded %d rows", worker_id, rows)
+                    except Exception:
+                        logger.error("Worker %d failed", worker_id, exc_info=True)
 
             # playback_location_table = _run_report(
             #     youtube_analytics_service, video_ids,
