@@ -108,3 +108,17 @@ poetry run pytest tests/test_main.py -m "not integration" -x -q 2>&1 | tail -30
 # to run only a single test by name and category
 poetry run pytest -k "test_run_country_report" -m integration
 ```
+
+
+# to get full upload playlist
+https://stackoverflow.com/questions/18953499/youtube-api-to-fetch-all-videos-on-a-channel/27872244#27872244
+
+```bash
+curl "https://www.googleapis.com/youtube/v3/channels?id=UCSNK6abAoM6Kj0SkHOStNLg&part=contentDetails" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+```bash
+url "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet%2CcontentDetails&maxResults=50&playlistId=UUSNK6abAoM6Kj0SkHOStNLg" \
+  -H "Authorization: Bearer <access_token>"
+```

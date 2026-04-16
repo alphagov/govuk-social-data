@@ -19,6 +19,7 @@ from src.main import (
     _with_video_id,
     chunk_video_ids,
     generate_date_ranges,
+    generate_monthly_date_ranges,
     get_operating_system_and_device_type_single_video_config,
     get_playback_details_single_video_config,
     get_playback_locations_single_video_config,
@@ -107,6 +108,45 @@ class TestGenerateDateRanges:
             start_d = datetime.strptime(start, "%Y-%m-%d").date()
             end_d = datetime.strptime(end, "%Y-%m-%d").date()
             assert (end_d - start_d).days == 30
+
+
+# ---------------------------------------------------------------------------
+# generate_monthly_date_ranges
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateMonthlyDateRanges:
+    def test_single_month(self) -> None:
+        result = generate_monthly_date_ranges("2025-01-01", "2025-01-31")
+        assert result == [("2025-01-01", "2025-01-31")]
+
+    def test_two_months(self) -> None:
+        result = generate_monthly_date_ranges("2025-01-01", "2025-02-28")
+        assert result == [
+            ("2025-01-01", "2025-01-31"),
+            ("2025-02-01", "2025-02-28"),
+        ]
+
+    def test_spans_year_boundary(self) -> None:
+        result = generate_monthly_date_ranges("2024-11-01", "2025-02-01")
+        assert result == [
+            ("2024-11-01", "2024-11-30"),
+            ("2024-12-01", "2024-12-31"),
+            ("2025-01-01", "2025-01-31"),
+            ("2025-02-01", "2025-02-28"),
+        ]
+
+    def test_start_and_end_same_month(self) -> None:
+        result = generate_monthly_date_ranges("2025-03-10", "2025-03-20")
+        assert result == [("2025-03-01", "2025-03-31")]
+
+    def test_leap_year_february(self) -> None:
+        result = generate_monthly_date_ranges("2024-02-01", "2024-02-29")
+        assert result == [("2024-02-01", "2024-02-29")]
+
+    def test_end_before_start_returns_empty(self) -> None:
+        result = generate_monthly_date_ranges("2025-03-01", "2025-01-01")
+        assert result == []
 
 
 # ---------------------------------------------------------------------------
