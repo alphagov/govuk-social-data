@@ -951,7 +951,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--refresh-youtube-ids-and-metadata",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
         help="Refresh the list of video IDs and metadata (default: False)",
     )
     parser.add_argument(
