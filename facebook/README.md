@@ -184,6 +184,37 @@ Facebook has deprecated a number of page and post insight metrics across the v25
 | `post_clicks` | Total link + photo clicks |
 | `post_clicks_by_type` | Clicks broken down by type (dict) |
 | `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger (dict) |
+## Metrics Collected
+
+### Page Insights (daily, `period=day`)
+
+| Metric | Description |
+|---|---|
+| `page_media_view` | Total media impressions (replaces deprecated `page_impressions`) |
+| `page_total_media_view_unique` | Unique media reach (replaces deprecated `page_impressions_unique`) |
+| `page_post_engagements` | Reactions, comments, shares on posts |
+| `page_daily_follows_unique` | New unique followers |
+| `page_daily_unfollows_unique` | Unfollows |
+| `page_views_total` | Total page views |
+| `page_actions_post_reactions_total` | Total reactions across all post types |
+
+### Page Insights (lifetime, `period=lifetime`)
+
+| Metric | Description |
+|---|---|
+| `page_follows` | Cumulative follower count (replaces deprecated `page_fans`) |
+
+### Post Insights (lifetime aggregate per post, via `/{post_id}/insights`)
+
+| Metric | Description |
+|---|---|
+| `post_media_view` | Total impressions (replaces deprecated `post_impressions`) |
+| `post_total_media_view_unique` | Unique reach (replaces deprecated `post_impressions_unique`) |
+| `post_engagements` | Total engagements (replaces deprecated `post_engaged_users`) |
+| `post_activity_by_action_type_unique` | Unique engaged users by action type (dict: likes, comments, shares, etc.) |
+| `post_clicks` | Total link + photo clicks |
+| `post_clicks_by_type` | Clicks broken down by type (dict) |
+| `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger (dict) |
 
 ### Video Insights (lifetime aggregate per Reel, via `/{video_id}/video_insights`)
 
