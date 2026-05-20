@@ -13,7 +13,7 @@ Page node
 ├── Page/posts       (all posts, paginated)
 │   ├── Posts                      → post_id, page_id, message, created_time, post_type, permalink_url
 │   ├── Post insights (scalar)     → post_id, metric, period, value
-│   ├── Post reactions             → post_id, like, love, wow, haha, sad, angry
+│   ├── Post reactions             → post_id, like, love, wow, haha, sorry, anger
 │   ├── Post activity by action    → post_id, action_type, unique_users
 │   └── Post clicks by type        → post_id, click_type, clicks
 └── Page/videos      (all videos, paginated)
