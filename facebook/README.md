@@ -288,6 +288,28 @@ Fetched via `/{video_id}/video_insights?metric=post_video_likes_by_reaction_type
 | `count` | Number of reactions of this type |
 
 Reference: [Video Insights metrics](https://developers.facebook.com/docs/graph-api/reference/video/video_insights/#metrics)
+## Metrics Collected
+
+### Page Insights (daily)
+| Metric | Description |
+|---|---|
+| `page_impressions` | Total content impressions |
+| `page_impressions_unique` | Unique reach |
+| `page_post_engagements` | Reactions, comments, shares |
+| `page_fan_adds` | New page likes |
+| `page_fan_removes` | Unlikes |
+| `page_daily_follows_unique` | New followers |
+| `page_daily_unfollows_unique` | Unfollows |
+| `page_fans` | Cumulative page likes (lifetime snapshot) |
+
+### Post Insights (lifetime aggregate per post)
+| Metric | Description |
+|---|---|
+| `post_impressions` | Total impressions |
+| `post_impressions_unique` | Unique reach |
+| `post_engaged_users` | Unique engaged users |
+| `post_clicks` | Link + photo clicks |
+| `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger |
 
 ### Video Insights (lifetime aggregate per Reel, via `/{video_id}/video_insights`)
 
