@@ -8,12 +8,20 @@ Pulls analytics for a single Facebook Page using the Graph API v25.0. Outputs Py
 
 ```
 Page node
-├── Page info        (id, name, fan_count, followers_count, talking_about_count)
-├── Page/insights    (daily: impressions, reach, engagement, fans gained/lost, followers)
+├── Page info        → page_id, name, fan_count, followers_count, talking_about_count
+├── Page/insights    → page_id, metric, period, end_time, value
 ├── Page/posts       (all posts, paginated)
-│   └── Post/insights per post (impressions, reach, engaged users, clicks, reactions)
+│   ├── Posts                      → post_id, page_id, message, created_time, post_type, permalink_url
+│   ├── Post insights (scalar)     → post_id, metric, period, value
+│   ├── Post reactions             → post_id, like, love, wow, haha, sorry, anger
+│   ├── Post activity by action    → post_id, action_type, unique_users
+│   └── Post clicks by type        → post_id, click_type, clicks
 └── Page/videos      (all videos, paginated)
-    └── Video/video_insights per video (views, watch time, avg watch time, complete views)
+    ├── Videos                     → video_id, page_id, title, description, created_time, length
+    ├── Video insights (scalar)    → video_id, metric, period, value
+    ├── Video reel reactions       → video_id, reaction_type, count
+    ├── Video reel social actions  → video_id, action_type, count
+    └── Video reel retention       → video_id, second, retention_pct
 ```
 
 OOP model hierarchy lives in [models.py](models.py). PyArrow schemas and `to_arrow()` converters live in [schemas.py](schemas.py). The HTTP client and auth live in [api.py](api.py). Orchestration and CLI live in [main.py](main.py).
@@ -43,6 +51,10 @@ poetry install
 
 # Authenticate with GCP (to access Secret Manager)
 gcloud auth application-default login
+
+# Install pre-commit hooks (including the pre-push API test hook)
+pre-commit install
+pre-commit install --hook-type pre-push
 ```
 
 ---
@@ -82,7 +94,7 @@ poetry run python -m facebook.main --no-run-video-data
 | `--video-limit N` | all | Fetch only N videos and their insights |
 | `--run-video-insights` / `--no-run-video-insights` | on | Fetch per-video insight calls (sub-flag of `--run-video-data`) |
 
-**Output**: PyArrow tables printed as dicts to stdout — one each for page info, page insights, posts, post insights, post reactions, videos, and video insights.
+**Output**: 12 PyArrow tables printed as dicts to stdout — page info, page insights, posts, post insights (scalar), post reactions, post activity by action type, post clicks by type, videos, video insights (scalar), video reel reactions, video reel social actions, video reel retention.
 
 ---
 
@@ -93,15 +105,16 @@ poetry run python -m facebook.main --no-run-video-data
 poetry run pytest tests/test_facebook.py -m "not integration" -x -q
 
 # All tests including live API calls (requires GCP credentials + valid Facebook token)
-poetry run pytest tests/test_facebook.py -v
+poetry run pytest tests/test_facebook.py tests/test_facebook_http.py -m integration -v
+
+# Run the pre-push metric checks manually without pushing
+pre-commit run facebook-api-tests --hook-stage pre-push
 ```
 
 **Test module structure**: `test_facebook.py` and `test_facebook_http.py` are intentionally isolated — each builds its own client and fetches page/post/video IDs independently with no shared `conftest.py`. `test_facebook.py` tests the Python client and schema layer; `test_facebook_http.py` tests the raw HTTP endpoints directly with `requests.get`, providing an independent check that each API endpoint and metric string is valid.
 
 ---
 
-<<<<<<< HEAD
-=======
 ## API Constraints & Known Deprecations
 
 ### Query Limits
@@ -136,29 +149,37 @@ Facebook has deprecated a number of page and post insight metrics across the v25
 
 ---
 
->>>>>>> f5b9d98 (update facebook README with document Reels metrics, new CLI flags, and test module structure- Add CLI flags summary table covering --post-limit, --video-limit, --run-video-data- changes to python -m facebook.main use of -m flag- Include raw API response examples showing long-form video vs Reel metric differences)
 ## Metrics Collected
 
-### Page Insights (daily)
-| Metric | Description |
-|---|---|
-| `page_impressions` | Total content impressions |
-| `page_impressions_unique` | Unique reach |
-| `page_post_engagements` | Reactions, comments, shares |
-| `page_fan_adds` | New page likes |
-| `page_fan_removes` | Unlikes |
-| `page_daily_follows_unique` | New followers |
-| `page_daily_unfollows_unique` | Unfollows |
-| `page_fans` | Cumulative page likes (lifetime snapshot) |
+### Page Insights (daily, `period=day`)
 
-### Post Insights (lifetime aggregate per post)
 | Metric | Description |
 |---|---|
-| `post_impressions` | Total impressions |
-| `post_impressions_unique` | Unique reach |
-| `post_engaged_users` | Unique engaged users |
-| `post_clicks` | Link + photo clicks |
-| `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger |
+| `page_media_view` | Total media impressions (replaces deprecated `page_impressions`) |
+| `page_total_media_view_unique` | Unique media reach (replaces deprecated `page_impressions_unique`) |
+| `page_post_engagements` | Reactions, comments, shares on posts |
+| `page_daily_follows_unique` | New unique followers |
+| `page_daily_unfollows_unique` | Unfollows |
+| `page_views_total` | Total page views |
+| `page_actions_post_reactions_total` | Total reactions across all post types |
+
+### Page Insights (lifetime, `period=lifetime`)
+
+| Metric | Description |
+|---|---|
+| `page_follows` | Cumulative follower count (replaces deprecated `page_fans`) |
+
+### Post Insights (lifetime aggregate per post, via `/{post_id}/insights`)
+
+| Metric | Description |
+|---|---|
+| `post_media_view` | Total impressions (replaces deprecated `post_impressions`) |
+| `post_total_media_view_unique` | Unique reach (replaces deprecated `post_impressions_unique`) |
+| `post_engagements` | Total engagements (replaces deprecated `post_engaged_users`) |
+| `post_activity_by_action_type_unique` | Unique engaged users by action type (dict: likes, comments, shares, etc.) |
+| `post_clicks` | Total link + photo clicks |
+| `post_clicks_by_type` | Clicks broken down by type (dict) |
+| `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger (dict) |
 
 ### Video Insights (lifetime aggregate per Reel, via `/{video_id}/video_insights`)
 
