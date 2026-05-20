@@ -4,6 +4,7 @@ import argparse
 import io
 import json
 import logging
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,9 +18,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from google.auth import exceptions as auth_exceptions
 from google.auth.transport.requests import Request
-from google.cloud import bigquery, secretmanager
+from google.cloud import bigquery
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource
+
+from src.authentication import FileTokenCache, get_gcp_secret
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,7 @@ CLIENT_SECRET_STRING_SECRET = "youtube-processing-client-secret-web-app"
 CHANNEL_ID = "UCSNK6abAoM6Kj0SkHOStNLg"
 TOKEN_SECRET_VERSION = "10"  # token version or "latest"
 TOKEN_JSON_SECRET = "youtube-processing-web-client-token-json"
-_TOKEN_CACHE: dict | None = None
+_YOUTUBE_TOKEN_CACHE = FileTokenCache("~/.config/youtube_exploration/token_cache.json")
 
 
 youtube_traffic_sources = {
@@ -557,22 +560,23 @@ def get_video_titles(youtube_dataapi_v3_service: Resource, video_ids: list[str])
 
 
 def _save_token_cache(credentials: Credentials) -> None:
-    """Persists OAuth2 credentials to the in-memory token cache."""
-    global _TOKEN_CACHE
-    _TOKEN_CACHE = {
-        "access_token": credentials.token,
-        "refresh_token": credentials.refresh_token,
-        "expiry": credentials.expiry.isoformat() if credentials.expiry else None,
-    }
+    """Persists OAuth2 credentials to the file token cache."""
+    _YOUTUBE_TOKEN_CACHE.save(
+        {
+            "access_token": credentials.token,
+            "refresh_token": credentials.refresh_token,
+            "expires_at": credentials.expiry.isoformat() if credentials.expiry else None,
+        }
+    )
 
 
 def _load_token_cache(client_id: str, client_secret: str) -> Credentials | None:
-    """Loads OAuth2 credentials from the in-memory token cache, refreshing if expired.
-    Returns None if no cache has been populated in this process."""
-    if _TOKEN_CACHE is None:
+    """Loads OAuth2 credentials from the file token cache, refreshing if expired.
+    Returns None if no cache file exists."""
+    data = _YOUTUBE_TOKEN_CACHE.load()
+    if data is None:
         return None
-    data = _TOKEN_CACHE
-    expiry = datetime.fromisoformat(data["expiry"]) if data.get("expiry") else None
+    expiry = datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None
     credentials = Credentials(
         token=data.get("access_token"),
         refresh_token=data.get("refresh_token"),
@@ -597,14 +601,6 @@ def _load_token_cache(client_id: str, client_secret: str) -> Credentials | None:
             return None
         _save_token_cache(credentials)
     return credentials
-
-
-def get_gcp_secret(secret_name: str, secret_version: str = "latest", project_id: str = PROJECT_ID) -> str:
-    """Retrieves a secret value from GCP Secret Manager."""
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/{project_id}/secrets/{secret_name}/versions/{secret_version}"
-    payload = client.access_secret_version(request={"name": name}).payload.data.decode("utf-8")
-    return payload
 
 
 def _build_service(api_name: str, version: str, scopes: list[str]) -> Resource:
