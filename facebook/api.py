@@ -229,7 +229,7 @@ class FacebookClient:
                     name=item["name"],
                     period=item["period"],
                     values=[
-                        PageInsightValue(end_time=v["end_time"], value=int(v["value"]))
+                        PageInsightValue(end_time=v.get("end_time"), value=int(v["value"]))
                         for v in item.get("values", [])
                         if isinstance(v["value"], (int, float))
                     ],

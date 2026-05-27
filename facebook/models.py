@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class PageInsightValue(BaseModel):
-    end_time: datetime
+    end_time: datetime | None = None  # present on day-period metrics; absent on lifetime metrics
     value: int
 
 
