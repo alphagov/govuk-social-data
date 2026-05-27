@@ -56,7 +56,6 @@ def parse_args() -> argparse.Namespace:
         default=True,
         help="Fetch per-post insights (default: on). Use --no-run-post-insights to skip.",
     )
-
     parser.add_argument(
         "--run-video-data",
         action=argparse.BooleanOptionalAction,

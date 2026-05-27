@@ -3,16 +3,8 @@ from datetime import datetime, timezone
 import pyarrow as pa
 import pytest
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 from facebook.api import PAGE_DAY_METRICS, PAGE_LIFETIME_METRICS, POST_METRICS, VIDEO_METRICS
 from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric
-=======
-from facebook.models import Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
-=======
-from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric
->>>>>>> 7c81fbc (squash updated readme and tests for new reel video object)
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
     PAGE_INSIGHTS_SCHEMA,
@@ -235,24 +227,11 @@ def _fb():
 
     client = build_client()
     page_id = get_gcp_secret(PAGE_ID_SECRET, project_id=PROJECT_ID)
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 7d1e99c (to fix: fixed integrated tests to get instead ofpagenating\)
     # Use _get (not _paginate) — we only need the first item, not all pages
     posts_data = client._get(f"{page_id}/posts", params={"fields": "id", "limit": "1"})
     post_id = posts_data["data"][0]["id"] if posts_data.get("data") else None
     videos_data = client._get(f"{page_id}/videos", params={"fields": "id", "limit": "1"})
     video_id = videos_data["data"][0]["id"] if videos_data.get("data") else None
-<<<<<<< HEAD
-=======
-    posts = client._paginate(f"{page_id}/posts", params={"fields": "id", "limit": "1"})
-    post_id = posts[0]["id"] if posts else None
-    videos = client._paginate(f"{page_id}/videos", params={"fields": "id", "limit": "1"})
-    video_id = videos[0]["id"] if videos else None
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
-=======
->>>>>>> 7d1e99c (to fix: fixed integrated tests to get instead ofpagenating\)
     return {"client": client, "page_id": page_id, "post_id": post_id, "video_id": video_id}
 
 
@@ -289,10 +268,6 @@ def _post_insight_names(_post_with_insights):
 
 @pytest.fixture(scope="module")
 def _first_video_with_insights(_fb):
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 7c81fbc (squash updated readme and tests for new reel video object)
     """Returns the first video with populated insights from the most recent 10 videos.
 
     Very recently published videos may return empty insight data from Facebook, so we
@@ -300,7 +275,6 @@ def _first_video_with_insights(_fb):
     """
     videos = _fb["client"].get_videos(_fb["page_id"], max_results=10)
     if not videos:
-<<<<<<< HEAD
         pytest.skip("No videos available on page")
     for video in videos:
         result = _fb["client"].get_video_insights(video)
@@ -308,22 +282,6 @@ def _first_video_with_insights(_fb):
         if insights is not None and any(getattr(insights, f) is not None for f in FacebookReelInsights.model_fields):
             return result
     pytest.skip("No video with populated insights found in the most recent 10 videos")
-=======
-    """Calls get_video_insights() on the most recent video; returns the populated Video."""
-    if not _fb["video_id"]:
-        pytest.skip("No videos available on page")
-    videos = _fb["client"].get_videos(_fb["page_id"])
-    return _fb["client"].get_video_insights(videos[0])
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
-=======
-        pytest.skip("No videos available on page")
-    for video in videos:
-        result = _fb["client"].get_video_insights(video)
-        insights = result.insights
-        if insights is not None and any(getattr(insights, f) is not None for f in FacebookReelInsights.model_fields):
-            return result
-    pytest.skip("No video with populated insights found in the most recent 10 videos")
->>>>>>> 7c81fbc (squash updated readme and tests for new reel video object)
 
 
 # ------------------------------------------------------------------
@@ -348,15 +306,7 @@ def test_integration_get_page(_fb):
 
 @pytest.mark.integration
 def test_integration_get_posts(_fb):
-<<<<<<< HEAD
-<<<<<<< HEAD
     posts = _fb["client"].get_posts(_fb["page_id"], limit=5, max_results=5)
-=======
-    posts = _fb["client"].get_posts(_fb["page_id"])
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
-=======
-    posts = _fb["client"].get_posts(_fb["page_id"], limit=5, max_results=5)
->>>>>>> 094a233 (modified default facebook c all values for a smaller range, modified tests to call a smaller range)
     assert len(posts) > 0
     table = posts_to_arrow(posts)
     assert "post_id" in table.column_names
@@ -364,15 +314,7 @@ def test_integration_get_posts(_fb):
 
 @pytest.mark.integration
 def test_integration_get_videos(_fb):
-<<<<<<< HEAD
-<<<<<<< HEAD
     videos = _fb["client"].get_videos(_fb["page_id"], limit=5, max_results=5)
-=======
-    videos = _fb["client"].get_videos(_fb["page_id"])
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
-=======
-    videos = _fb["client"].get_videos(_fb["page_id"], limit=5, max_results=5)
->>>>>>> 094a233 (modified default facebook c all values for a smaller range, modified tests to call a smaller range)
     assert len(videos) > 0
     from facebook.schemas import videos_to_arrow
 
@@ -393,12 +335,7 @@ def test_integration_page_insights_returns_data(_page_insight_names):
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "metric_name",
-<<<<<<< HEAD
     PAGE_DAY_METRICS + PAGE_LIFETIME_METRICS,
-=======
-    __import__("facebook.api", fromlist=["PAGE_DAY_METRICS"]).PAGE_DAY_METRICS
-    + __import__("facebook.api", fromlist=["PAGE_LIFETIME_METRICS"]).PAGE_LIFETIME_METRICS,
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
 )
 def test_integration_page_insight_metric_present(metric_name, _page_insight_names):
     assert metric_name in _page_insight_names, (
@@ -420,11 +357,7 @@ def test_integration_post_insights_returns_data(_post_insight_names):
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "metric_name",
-<<<<<<< HEAD
     POST_METRICS,
-=======
-    __import__("facebook.api", fromlist=["POST_METRICS"]).POST_METRICS,
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
 )
 def test_integration_post_insight_metric_present(metric_name, _post_insight_names):
     assert metric_name in _post_insight_names, (
@@ -440,47 +373,20 @@ def test_integration_post_insight_metric_present(metric_name, _post_insight_name
 
 @pytest.mark.integration
 def test_integration_video_insights_returns_data(_first_video_with_insights):
-<<<<<<< HEAD
     insights = _first_video_with_insights.insights
     assert insights is not None, "get_video_insights() returned no metrics"
-<<<<<<< HEAD
-<<<<<<< HEAD
     populated = [f for f in FacebookReelInsights.model_fields if getattr(insights, f) is not None]
-=======
-    populated = [f for f in insights.model_fields if getattr(insights, f) is not None]
->>>>>>> 8b17468 (To Squash fixed facebook/README.md and test_facebook.py to use the new facebookReelInsights instead of old VideoInsightsMetric)
-=======
-    populated = [f for f in FacebookReelInsights.model_fields if getattr(insights, f) is not None]
->>>>>>> 7c81fbc (squash updated readme and tests for new reel video object)
     assert len(populated) > 0, "get_video_insights() returned no metrics"
-=======
-    assert len(_first_video_with_insights.insights) > 0, "get_video_insights() returned no metrics"
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "metric_name",
-<<<<<<< HEAD
     VIDEO_METRICS,
 )
 def test_integration_video_insight_metric_present(metric_name, _first_video_with_insights):
     insights = _first_video_with_insights.insights
-<<<<<<< HEAD
-<<<<<<< HEAD
     returned = {f for f in FacebookReelInsights.model_fields if getattr(insights, f) is not None}
-=======
-    returned = {f for f in insights.model_fields if getattr(insights, f) is not None}
->>>>>>> 8b17468 (To Squash fixed facebook/README.md and test_facebook.py to use the new facebookReelInsights instead of old VideoInsightsMetric)
-=======
-    __import__("facebook.api", fromlist=["VIDEO_METRICS"]).VIDEO_METRICS,
-)
-def test_integration_video_insight_metric_present(metric_name, _first_video_with_insights):
-    returned = {m.name for m in _first_video_with_insights.insights}
->>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
-=======
-    returned = {f for f in FacebookReelInsights.model_fields if getattr(insights, f) is not None}
->>>>>>> 7c81fbc (squash updated readme and tests for new reel video object)
     assert metric_name in returned, (
         f"Expected metric '{metric_name}' not returned by get_video_insights(). " f"Returned: {sorted(returned)}"
     )
