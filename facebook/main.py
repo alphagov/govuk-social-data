@@ -30,13 +30,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Facebook Graph API analytics pipeline")
     parser.add_argument(
         "--start-date",
-        default=(datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d"),
-        help="Start date (YYYY-MM-DD). Defaults to 1 days ago.",
+        default=(datetime.today() - timedelta(days=30)).strftime("%Y-%m-%d"),
+        help="Start date (YYYY-MM-DD). Defaults to 30 days ago.",
     )
     parser.add_argument(
         "--end-date",
-        default=(datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d"),
-        help="End date (YYYY-MM-DD). Defaults to one day ago.",
+        default=datetime.today().strftime("%Y-%m-%d"),
+        help="End date (YYYY-MM-DD). Defaults to today.",
     )
     parser.add_argument(
         "--run-post-data",
@@ -68,6 +68,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Limit number of videos fetched (e.g. --video-limit 10). Defaults to all videos.",
     )
+
     parser.add_argument(
         "--run-video-insights",
         action=argparse.BooleanOptionalAction,
@@ -169,7 +170,6 @@ def main() -> None:
             logger.info("Skipping video insights (--no-run-video-insights)")
     else:
         logger.info("Skipping all video data (--no-run-video-data)")
-
 
 if __name__ == "__main__":
     main()
