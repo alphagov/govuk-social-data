@@ -94,7 +94,7 @@ poetry run python your_script.py
 ### Running tests
 ```bash
 ## running unit tests
-poetry run pytest tests/test_main.py -m
+poetry run pytest tests/test_main.py
 
 # running a subset of unit tests
 poetry run pytest tests/test_main.py -m "not integration"

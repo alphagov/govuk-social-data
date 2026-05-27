@@ -46,7 +46,8 @@ def _http():
     """
     import logging
 
-    logging.disable(logging.CRITICAL)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("google.auth").setLevel(logging.WARNING)
 
     client = build_client()
     page_id = get_gcp_secret(PAGE_ID_SECRET, project_id=PROJECT_ID)
