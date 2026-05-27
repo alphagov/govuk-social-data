@@ -68,7 +68,6 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Limit number of videos fetched (e.g. --video-limit 10). Defaults to all videos.",
     )
-
     parser.add_argument(
         "--run-video-insights",
         action=argparse.BooleanOptionalAction,

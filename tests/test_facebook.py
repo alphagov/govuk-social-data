@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pyarrow as pa
 import pytest
 
+
 from facebook.api import PAGE_DAY_METRICS, PAGE_LIFETIME_METRICS, POST_METRICS, VIDEO_METRICS
 from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric
 from facebook.schemas import (
@@ -283,7 +284,6 @@ def _first_video_with_insights(_fb):
             return result
     pytest.skip("No video with populated insights found in the most recent 10 videos")
 
-
 # ------------------------------------------------------------------
 # Basic client / node / edge tests
 # ------------------------------------------------------------------
@@ -313,7 +313,6 @@ def test_integration_get_posts(_fb):
 
 
 @pytest.mark.integration
-def test_integration_get_videos(_fb):
     videos = _fb["client"].get_videos(_fb["page_id"], limit=5, max_results=5)
     assert len(videos) > 0
     from facebook.schemas import videos_to_arrow
