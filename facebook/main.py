@@ -2,9 +2,11 @@ import argparse
 import logging
 import os
 import sys
+
 from datetime import datetime, timedelta, timezone
 
 import pyarrow as pa
+
 
 from facebook.api import PAGE_ID_SECRET, PROJECT_ID, build_client
 from facebook.schemas import (
@@ -185,6 +187,23 @@ def main() -> None:
             _upload(post_reactions_to_arrow(posts_with_insights), "facebook_post_reactions", POST_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
             _upload(post_activity_to_arrow(posts_with_insights), "facebook_post_activity", POST_ACTIVITY_SCHEMA, args.dataset, target_date, ingestion_timestamp)
             _upload(post_clicks_by_type_to_arrow(posts_with_insights), "facebook_post_clicks_by_type", POST_CLICKS_BY_TYPE_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            post_insights_table = post_insights_to_arrow(posts_with_insights)
+            print(f"\n=== Post Insights ({len(post_insights_table)} rows) ===")
+            print(post_insights_table.to_pydict())
+
+            post_reactions_table = post_reactions_to_arrow(posts_with_insights)
+            print(f"\n=== Post Reactions ({len(post_reactions_table)} rows) ===")
+            print(post_reactions_table.to_pydict())
+
+            post_activity_table = post_activity_to_arrow(posts_with_insights)
+            print(f"\n=== Post Activity by Action Type ({len(post_activity_table)} rows) ===")
+            print(post_activity_table.to_pydict())
+
+
+
+            post_clicks_table = post_clicks_by_type_to_arrow(posts_with_insights)
+            print(f"\n=== Post Clicks by Type ({len(post_clicks_table)} rows) ===")
+            print(post_clicks_table.to_pydict())
         else:
             logger.info("Skipping post insights (--no-run-post-insights)")
     else:
@@ -212,6 +231,29 @@ def main() -> None:
             logger.info("Skipping video insights (--no-run-video-insights)")
     else:
         logger.info("Skipping all video data (--no-run-video-data)")
+
+    if not args.run_video_insights:
+        logger.info("Skipping video insights (--no-run-video-insights)")
+        return
+
+    # Videos
+    logger.info("Fetching videos...")
+    videos = client.get_videos(page_id)
+    logger.info("Found %d videos", len(videos))
+    videos_table = videos_to_arrow(videos)
+    print(f"\n=== Videos ({len(videos_table)} rows) ===")
+    print(videos_table.to_pydict())
+
+    # Video insights
+    logger.info("Fetching insights for %d videos...", len(videos))
+    videos_with_insights = []
+    for i, video in enumerate(videos, start=1):
+        logger.info("Video %d/%d: %s", i, len(videos), video.video_id)
+        videos_with_insights.append(client.get_video_insights(video))
+
+    video_insights_table = video_insights_to_arrow(videos_with_insights)
+    print(f"\n=== Video Insights ({len(video_insights_table)} rows) ===")
+    print(video_insights_table.to_pydict())
 
 if __name__ == "__main__":
     main()
