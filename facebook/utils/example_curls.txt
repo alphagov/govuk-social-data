@@ -1,0 +1,3 @@
+# get videos from the facebook page since 2024-01-01 unitll 2024-12-31 -- doesnt work
+curl -i -X GET \
+ "https://graph.facebook.com/v25.0/267930759729600/videos?since=2024-01-01&until=2024-12-31&<page_access_token>"
