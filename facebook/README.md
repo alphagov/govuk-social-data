@@ -8,6 +8,19 @@ Pulls analytics for a single Facebook Page using the Graph API v25.0. Outputs Py
 
 ```
 Page node
+<<<<<<< HEAD
+├── Page info        (id, name, fan_count, followers_count, talking_about_count)
+├── Page/insights    (daily: impressions, reach, engagement, fans gained/lost, followers)
+<<<<<<< HEAD
+├── Page/posts       (all posts, paginated)
+│   └── Post/insights per post (impressions, reach, engaged users, clicks, reactions)
+└── Page/videos      (all videos, paginated)
+    └── Video/video_insights per video (views, watch time, avg watch time, complete views)
+=======
+└── Page/posts       (all posts, paginated)
+    └── Post/insights per post (impressions, reach, engaged users, clicks, reactions)
+>>>>>>> a9f9c33 ( added facebook api.py, main.py and readme.pyCurrently handles all the main metrics for page, post and analytics, does not include video which I'll be adding later. Makes use of abstracted authethentication but there is more scope for have general clasess. will refactor)
+=======
 ├── Page info        → page_id, name, fan_count, followers_count, talking_about_count
 ├── Page/insights    → page_id, metric, period, end_time, value
 ├── Page/posts       (all posts, paginated)
@@ -22,6 +35,7 @@ Page node
     ├── Video reel reactions       → video_id, reaction_type, count
     ├── Video reel social actions  → video_id, action_type, count
     └── Video reel retention       → video_id, second, retention_pct
+>>>>>>> 7c81fbc (squash updated readme and tests for new reel video object)
 ```
 
 OOP model hierarchy lives in [models.py](models.py). PyArrow schemas and `to_arrow()` converters live in [schemas.py](schemas.py). The HTTP client and auth live in [api.py](api.py). Orchestration and CLI live in [main.py](main.py).
@@ -51,10 +65,6 @@ poetry install
 
 # Authenticate with GCP (to access Secret Manager)
 gcloud auth application-default login
-
-# Install pre-commit hooks (including the pre-push API test hook)
-pre-commit install
-pre-commit install --hook-type pre-push
 ```
 
 ---
@@ -62,6 +72,7 @@ pre-commit install --hook-type pre-push
 ## Running
 
 ```bash
+<<<<<<< HEAD
 # Default: last 30 days, all posts and videos with insights
 poetry run python -m facebook.main
 
@@ -94,7 +105,24 @@ poetry run python -m facebook.main --no-run-video-data
 | `--video-limit N` | all | Fetch only N videos and their insights |
 | `--run-video-insights` / `--no-run-video-insights` | on | Fetch per-video insight calls (sub-flag of `--run-video-data`) |
 
+<<<<<<< HEAD
+**Output**: PyArrow tables printed as dicts to stdout — one each for page info, page insights, posts, post insights, post reactions, videos, and video insights.
+=======
+# Default: last 30 days, with post insights
+poetry run python facebook/main.py
+
+# Custom date range
+poetry run python facebook/main.py --start-date 2024-01-01 --end-date 2024-01-31
+
+# Page-level only — skip per-post API calls (much faster)
+poetry run python facebook/main.py --no-run-post-insights
+```
+
+**Output**: PyArrow tables printed as dicts to stdout — one each for page info, page insights, posts, post insights, and post reactions.
+>>>>>>> a9f9c33 ( added facebook api.py, main.py and readme.pyCurrently handles all the main metrics for page, post and analytics, does not include video which I'll be adding later. Makes use of abstracted authethentication but there is more scope for have general clasess. will refactor)
+=======
 **Output**: 12 PyArrow tables printed as dicts to stdout — page info, page insights, posts, post insights (scalar), post reactions, post activity by action type, post clicks by type, videos, video insights (scalar), video reel reactions, video reel social actions, video reel retention.
+>>>>>>> 7c81fbc (squash updated readme and tests for new reel video object)
 
 ---
 
@@ -105,16 +133,16 @@ poetry run python -m facebook.main --no-run-video-data
 poetry run pytest tests/test_facebook.py -m "not integration" -x -q
 
 # All tests including live API calls (requires GCP credentials + valid Facebook token)
-poetry run pytest tests/test_facebook.py tests/test_facebook_http.py -m integration -v
-
-# Run the pre-push metric checks manually without pushing
-pre-commit run facebook-api-tests --hook-stage pre-push
+poetry run pytest tests/test_facebook.py -v
 ```
 
+<<<<<<< HEAD
 **Test module structure**: `test_facebook.py` and `test_facebook_http.py` are intentionally isolated — each builds its own client and fetches page/post/video IDs independently with no shared `conftest.py`. `test_facebook.py` tests the Python client and schema layer; `test_facebook_http.py` tests the raw HTTP endpoints directly with `requests.get`, providing an independent check that each API endpoint and metric string is valid.
 
 ---
 
+<<<<<<< HEAD
+=======
 ## API Constraints & Known Deprecations
 
 ### Query Limits
@@ -149,38 +177,35 @@ Facebook has deprecated a number of page and post insight metrics across the v25
 
 ---
 
+>>>>>>> f5b9d98 (update facebook README with document Reels metrics, new CLI flags, and test module structure- Add CLI flags summary table covering --post-limit, --video-limit, --run-video-data- changes to python -m facebook.main use of -m flag- Include raw API response examples showing long-form video vs Reel metric differences)
+=======
+---
+
+>>>>>>> a9f9c33 ( added facebook api.py, main.py and readme.pyCurrently handles all the main metrics for page, post and analytics, does not include video which I'll be adding later. Makes use of abstracted authethentication but there is more scope for have general clasess. will refactor)
 ## Metrics Collected
 
-### Page Insights (daily, `period=day`)
-
+### Page Insights (daily)
 | Metric | Description |
 |---|---|
-| `page_media_view` | Total media impressions (replaces deprecated `page_impressions`) |
-| `page_total_media_view_unique` | Unique media reach (replaces deprecated `page_impressions_unique`) |
-| `page_post_engagements` | Reactions, comments, shares on posts |
-| `page_daily_follows_unique` | New unique followers |
+| `page_impressions` | Total content impressions |
+| `page_impressions_unique` | Unique reach |
+| `page_post_engagements` | Reactions, comments, shares |
+| `page_fan_adds` | New page likes |
+| `page_fan_removes` | Unlikes |
+| `page_daily_follows_unique` | New followers |
 | `page_daily_unfollows_unique` | Unfollows |
-| `page_views_total` | Total page views |
-| `page_actions_post_reactions_total` | Total reactions across all post types |
+| `page_fans` | Cumulative page likes (lifetime snapshot) |
 
-### Page Insights (lifetime, `period=lifetime`)
-
+### Post Insights (lifetime aggregate per post)
 | Metric | Description |
 |---|---|
-| `page_follows` | Cumulative follower count (replaces deprecated `page_fans`) |
+| `post_impressions` | Total impressions |
+| `post_impressions_unique` | Unique reach |
+| `post_engaged_users` | Unique engaged users |
+| `post_clicks` | Link + photo clicks |
+| `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger |
 
-### Post Insights (lifetime aggregate per post, via `/{post_id}/insights`)
-
-| Metric | Description |
-|---|---|
-| `post_media_view` | Total impressions (replaces deprecated `post_impressions`) |
-| `post_total_media_view_unique` | Unique reach (replaces deprecated `post_impressions_unique`) |
-| `post_engagements` | Total engagements (replaces deprecated `post_engaged_users`) |
-| `post_activity_by_action_type_unique` | Unique engaged users by action type (dict: likes, comments, shares, etc.) |
-| `post_clicks` | Total link + photo clicks |
-| `post_clicks_by_type` | Clicks broken down by type (dict) |
-| `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger (dict) |
-
+<<<<<<< HEAD
 ### Video Insights (lifetime aggregate per Reel, via `/{video_id}/video_insights`)
 
 All videos on this page are Reels. Reels return `post_video_*` / `fb_reels_*` metrics — distinct from the
@@ -293,3 +318,14 @@ Reel — same endpoint, completely different metric names (as seen in your Explo
     }
   ]
 }
+<<<<<<< HEAD
+=======
+### Not yet implemented
+- Video watch time / average watch time (`/{video_id}/video_insights`)
+- Reels-specific engagement metrics
+- Live video metrics
+
+These require the `/{page_id}/videos` edge and additional API permissions.
+>>>>>>> a9f9c33 ( added facebook api.py, main.py and readme.pyCurrently handles all the main metrics for page, post and analytics, does not include video which I'll be adding later. Makes use of abstracted authethentication but there is more scope for have general clasess. will refactor)
+=======
+>>>>>>> 8b17468 (To Squash fixed facebook/README.md and test_facebook.py to use the new facebookReelInsights instead of old VideoInsightsMetric)
