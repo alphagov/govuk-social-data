@@ -18,15 +18,16 @@
 
 # ── Cell 1: imports & config ──────────────────────────────────────────────────
 import json
-from google_auth_oauthlib.flow import Flow
-from google.cloud import secretmanager
+
 from google.api_core import exceptions
+from google.cloud import secretmanager
+from google_auth_oauthlib.flow import Flow
 
 PROJECT_ID = "1031179907628"
 SCOPES = ["https://www.googleapis.com/auth/yt-analytics.readonly"]
 CLIENT_ID_STRING_SECRET = "youtube-processing-client-id-web-app"
 CLIENT_SECRET_STRING_SECRET = "youtube-processing-client-secret-web-app"
-REDIRECT_URI = "http://localhost:8080/"   # must match GCP console
+REDIRECT_URI = "http://localhost:8080/"  # must match GCP console
 CREDENTIALS_OUTPUT_PATH = "credentials.json"
 
 
@@ -50,9 +51,7 @@ def upload_gcp_secret(secret_id, payload, project_id=PROJECT_ID):
                 "secret": {"replication": {"automatic": {}}},
             }
         )
-    client.add_secret_version(
-        request={"parent": secret_path, "payload": {"data": payload.encode("utf-8")}}
-    )
+    client.add_secret_version(request={"parent": secret_path, "payload": {"data": payload.encode("utf-8")}})
     print(f"  Uploaded '{secret_id}' to Secret Manager.")
 
 
