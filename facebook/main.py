@@ -30,13 +30,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Facebook Graph API analytics pipeline")
     parser.add_argument(
         "--start-date",
-        default=(datetime.today() - timedelta(days=30)).strftime("%Y-%m-%d"),
-        help="Start date (YYYY-MM-DD). Defaults to 30 days ago.",
+        default=(datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d"),
+        help="Start date (YYYY-MM-DD). Defaults to 1 days ago.",
     )
     parser.add_argument(
         "--end-date",
-        default=datetime.today().strftime("%Y-%m-%d"),
-        help="End date (YYYY-MM-DD). Defaults to today.",
+        default=(datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d"),
+        help="End date (YYYY-MM-DD). Defaults to one day ago.",
     )
     parser.add_argument(
         "--run-post-data",

@@ -349,10 +349,14 @@ def test_integration_get_page(_fb):
 @pytest.mark.integration
 def test_integration_get_posts(_fb):
 <<<<<<< HEAD
+<<<<<<< HEAD
     posts = _fb["client"].get_posts(_fb["page_id"], limit=5, max_results=5)
 =======
     posts = _fb["client"].get_posts(_fb["page_id"])
 >>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
+=======
+    posts = _fb["client"].get_posts(_fb["page_id"], limit=5, max_results=5)
+>>>>>>> 094a233 (modified default facebook c all values for a smaller range, modified tests to call a smaller range)
     assert len(posts) > 0
     table = posts_to_arrow(posts)
     assert "post_id" in table.column_names
@@ -361,10 +365,14 @@ def test_integration_get_posts(_fb):
 @pytest.mark.integration
 def test_integration_get_videos(_fb):
 <<<<<<< HEAD
+<<<<<<< HEAD
     videos = _fb["client"].get_videos(_fb["page_id"], limit=5, max_results=5)
 =======
     videos = _fb["client"].get_videos(_fb["page_id"])
 >>>>>>> a733a9b (tests/test_facebook.py add per-metric integration tests for all 5 API categories)
+=======
+    videos = _fb["client"].get_videos(_fb["page_id"], limit=5, max_results=5)
+>>>>>>> 094a233 (modified default facebook c all values for a smaller range, modified tests to call a smaller range)
     assert len(videos) > 0
     from facebook.schemas import videos_to_arrow
 
