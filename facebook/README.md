@@ -36,10 +36,13 @@ Auth utilities (`FileTokenCache`, `get_gcp_secret`) are shared with the YouTube 
 |---|---|
 | `facebook_app_id` | Facebook App ID |
 | `facebook_app_secret` | Facebook App Secret |
-| `facebook_long_live_token_json` | JSON: `{"access_token": "..."}` — a long-lived user/page token |
+| `facebook_page_token` | JSON: `{"access_token": "..."}` — a page token |
 | `facebook_page_id` | The numeric Page ID to query |
 
-The pipeline exchanges the long-lived token for a fresh access token on first run and caches it at `~/.config/facebook_exploration/token_cache.json`. Subsequent runs use the cached token until it expires (~60 days).
+
+
+
+We generate a page_token using our personal credentials in the facebook graph api explorer took, or generated via the cli with a curl request which the tool provides.
 
 ---
 
@@ -62,7 +65,7 @@ pre-commit install --hook-type pre-push
 ## Running
 
 ```bash
-# Default: last 30 days, all posts and videos with insights
+# Default: last 1 days data, all posts and videos with insights
 poetry run python -m facebook.main
 
 # Custom date range
@@ -85,8 +88,8 @@ poetry run python -m facebook.main --no-run-video-data
 
 | Flag | Default | Description |
 |---|---|---|
-| `--start-date` | 30 days ago | Start of date range (YYYY-MM-DD) |
-| `--end-date` | today | End of date range (YYYY-MM-DD) |
+| `--start-date` | 1 day ago | Start of date range (YYYY-MM-DD) |
+| `--end-date` | 1 day ago | Start of date range (YYYY-MM-DD) |
 | `--run-post-data` / `--no-run-post-data` | on | Fetch posts (and optionally insights). `--no-run-post-data` skips all post work. |
 | `--post-limit N` | all | Fetch only N posts and their insights |
 | `--run-post-insights` / `--no-run-post-insights` | on | Fetch per-post insight calls (sub-flag of `--run-post-data`) |

@@ -1176,8 +1176,6 @@ def main() -> None:
         # Step 1: Get video IDs for the channel in the date range using Analytics API v2
         if REFRESH_YOUTUBE_IDS_AND_METADATA:
             # now we have Youtube Data API v3 access
-            # To fix - When --no-full-dataset is used, the code still runs the refresh
-            # block (API calls + BigQuery loads) and then discards the results in favor of the hardcoded sample.
             youtube_id_table = get_all_videos_for_date_range(youtube_data_service)
 
             # Youtube Data API v3 functions
