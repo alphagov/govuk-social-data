@@ -1126,7 +1126,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--refresh-youtube-ids-and-metadata",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Refresh the list of video IDs and metadata (default: False)",
     )
     parser.add_argument(
@@ -1176,9 +1176,9 @@ def main() -> None:
 
         # Step 1: Get video IDs for the channel in the date range using Analytics API v2
         if REFRESH_YOUTUBE_IDS_AND_METADATA:
-            # create_vido_ids using Analytics API v2 - could be replaced
-            # now we have Youtube Data API v3 access, but leaving as is
-            # for now to avoid hitting Data API quota limits during development
+            # now we have Youtube Data API v3 access
+            # To fix - When --no-full-dataset is used, the code still runs the refresh
+            # block (API calls + BigQuery loads) and then discards the results in favor of the hardcoded sample.
             youtube_id_table = get_all_videos_for_date_range(youtube_data_service)
 
             # Youtube Data API v3 functions
