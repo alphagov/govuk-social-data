@@ -232,28 +232,6 @@ def main() -> None:
     else:
         logger.info("Skipping all video data (--no-run-video-data)")
 
-    if not args.run_video_insights:
-        logger.info("Skipping video insights (--no-run-video-insights)")
-        return
-
-    # Videos
-    logger.info("Fetching videos...")
-    videos = client.get_videos(page_id)
-    logger.info("Found %d videos", len(videos))
-    videos_table = videos_to_arrow(videos)
-    print(f"\n=== Videos ({len(videos_table)} rows) ===")
-    print(videos_table.to_pydict())
-
-    # Video insights
-    logger.info("Fetching insights for %d videos...", len(videos))
-    videos_with_insights = []
-    for i, video in enumerate(videos, start=1):
-        logger.info("Video %d/%d: %s", i, len(videos), video.video_id)
-        videos_with_insights.append(client.get_video_insights(video))
-
-    video_insights_table = video_insights_to_arrow(videos_with_insights)
-    print(f"\n=== Video Insights ({len(video_insights_table)} rows) ===")
-    print(video_insights_table.to_pydict())
 
 if __name__ == "__main__":
     main()
