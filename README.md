@@ -119,20 +119,3 @@ curl "https://www.googleapis.com/youtube/v3/channels?id=UCSNK6abAoM6Kj0SkHOStNLg
 url "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet%2CcontentDetails&maxResults=50&playlistId=UUSNK6abAoM6Kj0SkHOStNLg" \
   -H "Authorization: Bearer <access_token>"
 ```
-
-## Airflow Deployment
-
-The `airflow_deployment/` folder contains a Cloud Composer 2 (managed Apache
-Airflow on GCP) setup for running this pipeline on a daily schedule.
-
-The pipeline is split into parallel Airflow tasks — one per report type — all
-depending on a shared `get_video_ids` task that reads from BigQuery. Each daily
-run fetches analytics for a single calendar day using Airflow's execution date.
-
-**To deploy:** see [`airflow_deployment/README.md`](airflow_deployment/README.md)
-for step-by-step instructions covering environment creation, IAM permissions,
-DAG upload, and dependency installation.
-
-> Before uploading to Composer, copy `src/main.py` into the DAGs folder as
-> `youtube_pipeline.py` (see deployment README for the exact command). This is
-> required because the project is not packaged as an installable Python module.
