@@ -1174,8 +1174,9 @@ def main() -> None:
         )
 
         # Step 1: Get video IDs for the channel in the date range using Analytics API v2
-        if REFRESH_YOUTUBE_IDS_AND_METADATA:
-            # now we have Youtube Data API v3 access
+        if REFRESH_YOUTUBE_IDS_AND_METADATA and FULL_DATASET:
+            # Gated on FULL_DATASET: refreshing and loading to BigQuery is a no-op in sample mode
+            # since the hardcoded IDs are used instead of the refreshed tables.
             youtube_id_table = get_all_videos_for_date_range(youtube_data_service)
 
             # Youtube Data API v3 functions
@@ -1206,9 +1207,8 @@ def main() -> None:
             country_codes = set_of_country_codes["country_code"].to_pylist()
             TARGET_DATASET = STAGING_DATASSET
         else:
-            # full data from BQ
             logger.info(
-                "Skipping video ID and metadata retrieval. Set REFRESH_YOUTUBE_IDS_AND_METADATA to True to enable."
+                "Using hardcoded sample video IDs. Set --full-dataset to True to read video IDs from BigQuery."
             )
             # small sample
             youtube_ids_with_metadata_mapping_table = pa.Table.from_arrays(
