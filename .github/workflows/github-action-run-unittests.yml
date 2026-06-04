@@ -1,0 +1,35 @@
+name: Run Pytest unnittests
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Fetch the code from the PR branch
+    - name: Check out repository code
+      uses: actions/checkout@v4
+
+    # 2. Set up the Python environment
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.14' # Change to your target Python version
+        cache: 'pip'           # Caches pip packages to speed up subsequent runs
+
+    # 3. Install Poetry
+    - name: Install Poetry
+      run: pip install poetry
+
+    # 4. Install dependencies via Poetry (respects poetry.lock)
+    - name: Install dependencies
+      run: poetry install
+
+    # 5. Run the test suite (exclude integration tests that need live credentials)
+    - name: Run tests with pytest
+      run: |
+        poetry run pytest tests/ -m "not integration" -q --tb=short
