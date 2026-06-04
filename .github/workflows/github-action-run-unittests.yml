@@ -18,12 +18,12 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.14' # Change to your target Python version
+        python-version: '3.14'
         cache: 'pip'           # Caches pip packages to speed up subsequent runs
 
     # 3. Install Poetry
     - name: Install Poetry
-      run: pip install poetry
+      run: pip install poetry=='2.3.2'
 
     # 4. Install dependencies via Poetry (respects poetry.lock)
     - name: Install dependencies
