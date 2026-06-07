@@ -1,0 +1,496 @@
+facebook_video_reel_example_id_267930759729600/insights = {
+  "data": [
+    {
+      "name": "post_video_likes_by_reaction_type",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": {
+            "REACTION_WOW": 1,
+            "REACTION_LIKE": 20,
+            "REACTION_HAHA": 2
+          }
+        }
+      ],
+      "title": "Lifetime reactions",
+      "description": "Lifetime: The number of reactions on your reel. The reactions button on a reel allows people to share different reactions to its content: like, love, haha, wow, sad or angry.",
+      "id": "4317813755143944/video_insights/post_video_likes_by_reaction_type/lifetime"
+    },
+    {
+      "name": "post_video_avg_time_watched",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 4332
+        }
+      ],
+      "title": "Lifetime average time reel viewed",
+      "description": "Lifetime: the average time (in ms) that your reel was played for, including any time spent replaying the reel during a single instance of it playing. As this metric includes replays, this number could be greater than the total length of the reel",
+      "id": "4317813755143944/video_insights/post_video_avg_time_watched/lifetime"
+    },
+    {
+      "name": "post_video_social_actions",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": {
+            "SHARE": 4,
+            "COMMENT": 4
+          }
+        }
+      ],
+      "title": "Lifetime comments, shares and reactions on your reel",
+      "description": "Lifetime: the number of comments, shares and reactions on your reel",
+      "id": "4317813755143944/video_insights/post_video_social_actions/lifetime"
+    },
+    {
+      "name": "post_video_view_time",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 8782282
+        }
+      ],
+      "title": "Lifetime total reel view time (in ms)",
+      "description": "Lifetime: total time (in ms) your reel was played, including any time spent replaying your reel.",
+      "id": "4317813755143944/video_insights/post_video_view_time/lifetime"
+    },
+    {
+      "name": "post_impressions_unique",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 2437
+        }
+      ],
+      "title": "Lifetime reel total reach",
+      "description": "Lifetime: the number of people who saw your reel at least once, whether or not your reel was played. People reached is different from impressions, which may include multiple views of your reel by the same people",
+      "id": "4317813755143944/video_insights/post_impressions_unique/lifetime"
+    },
+    {
+      "name": "blue_reels_play_count",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 2027
+        }
+      ],
+      "title": "Lifetime reel play count",
+      "description": "Lifetime: the number of times that your reel starts to play after an impression has already been counted. This is defined as reels sessions with 1 ms or more of playback and excludes replays.",
+      "id": "4317813755143944/video_insights/blue_reels_play_count/lifetime"
+    },
+    {
+      "name": "fb_reels_total_plays",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 2218
+        }
+      ],
+      "title": "Lifetime plays",
+      "description": "The number of times your reel starts to play after an impression has already been counted. This is defined as reel sessions of 1 ms or more and includes replays. Replays are counted after the initial play of the reel in the same session.",
+      "id": "4317813755143944/video_insights/fb_reels_total_plays/lifetime"
+    },
+    {
+      "name": "fb_reels_replay_count",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 191
+        }
+      ],
+      "title": "Lifetime replays",
+      "description": "The number of times that your reel starts to play again after an initial play of your reel. This is defined as replays of 1 ms or more in the same reel session",
+      "id": "4317813755143944/video_insights/fb_reels_replay_count/lifetime"
+    },
+    {
+      "name": "post_video_retention_graph",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": {
+            "0": 0.9985,
+            "1": 0.9985,
+            "2": 0.9985,
+            "3": 0.9985,
+            "4": 0.8158,
+            "5": 0.6499,
+            "6": 0.5236,
+            "7": 0.4505,
+            "8": 0.3866,
+            "9": 0.3257,
+            "10": 0.274,
+            "11": 0.2451,
+            "12": 0.2192,
+            "13": 0.2085,
+            "14": 0.1933,
+            "15": 0.1842,
+            "16": 0.1705,
+            "17": 0.1598,
+            "18": 0.1507,
+            "19": 0.1446,
+            "20": 0.1309,
+            "21": 0.1248,
+            "22": 0.1172,
+            "23": 0.1157,
+            "24": 0.1096,
+            "25": 0.1005,
+            "26": 0.0928,
+            "27": 0.0837,
+            "28": 0.0776,
+            "29": 0.0761,
+            "30": 0.0761,
+            "31": 0.07,
+            "32": 0.0685
+          }
+        }
+      ],
+      "title": "Lifetime audience retention",
+      "description": "Lifetime: The percentage of times that your reel was played for at various timestamp segments out of the total number of plays. Most reels will start out at 100% retention and curve downwards as plays begin to drop off. If someone skipped the beginning of the reel, your curve will start at the timestamp where the reel started playing.",
+      "id": "4317813755143944/video_insights/post_video_retention_graph/lifetime"
+    },
+    {
+      "name": "post_video_followers",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 0
+        }
+      ],
+      "title": "Lifetime follows by video",
+      "description": "Lifetime: The number of people who followed your Page or profile within 24 hours of watching this reel. This metric is estimated.",
+      "id": "4317813755143944/video_insights/post_video_followers/lifetime"
+    }
+  ]
+}
+
+video_id_930191616662036_video_insights = {
+  "data": [
+    {
+      "name": "post_video_likes_by_reaction_type",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": {
+            "REACTION_HAHA": 2,
+            "REACTION_WOW": 1,
+            "REACTION_LIKE": 21
+          }
+        }
+      ],
+      "title": "Lifetime reactions",
+      "description": "Lifetime: The number of reactions on your reel. The reactions button on a reel allows people to share different reactions to its content: like, love, haha, wow, sad or angry.",
+      "id": "930191616662036/video_insights/post_video_likes_by_reaction_type/lifetime"
+    },
+    {
+      "name": "post_video_avg_time_watched",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 4797
+        }
+      ],
+      "title": "Lifetime average time reel viewed",
+      "description": "Lifetime: the average time (in ms) that your reel was played for, including any time spent replaying the reel during a single instance of it playing. As this metric includes replays, this number could be greater than the total length of the reel",
+      "id": "930191616662036/video_insights/post_video_avg_time_watched/lifetime"
+    },
+    {
+      "name": "post_video_social_actions",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": {
+            "SHARE": 7,
+            "COMMENT": 3
+          }
+        }
+      ],
+      "title": "Lifetime comments, shares and reactions on your reel",
+      "description": "Lifetime: the number of comments, shares and reactions on your reel",
+      "id": "930191616662036/video_insights/post_video_social_actions/lifetime"
+    },
+    {
+      "name": "post_video_view_time",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 10358378
+        }
+      ],
+      "title": "Lifetime total reel view time (in ms)",
+      "description": "Lifetime: total time (in ms) your reel was played, including any time spent replaying your reel.",
+      "id": "930191616662036/video_insights/post_video_view_time/lifetime"
+    },
+    {
+      "name": "post_impressions_unique",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 2418
+        }
+      ],
+      "title": "Lifetime reel total reach",
+      "description": "Lifetime: the number of people who saw your reel at least once, whether or not your reel was played. People reached is different from impressions, which may include multiple views of your reel by the same people",
+      "id": "930191616662036/video_insights/post_impressions_unique/lifetime"
+    },
+    {
+      "name": "blue_reels_play_count",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 2159
+        }
+      ],
+      "title": "Lifetime reel play count",
+      "description": "Lifetime: the number of times that your reel starts to play after an impression has already been counted. This is defined as reels sessions with 1 ms or more of playback and excludes replays.",
+      "id": "930191616662036/video_insights/blue_reels_play_count/lifetime"
+    },
+    {
+      "name": "fb_reels_total_plays",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 2418
+        }
+      ],
+      "title": "Lifetime plays",
+      "description": "The number of times your reel starts to play after an impression has already been counted. This is defined as reel sessions of 1 ms or more and includes replays. Replays are counted after the initial play of the reel in the same session.",
+      "id": "930191616662036/video_insights/fb_reels_total_plays/lifetime"
+    },
+    {
+      "name": "fb_reels_replay_count",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 259
+        }
+      ],
+      "title": "Lifetime replays",
+      "description": "The number of times that your reel starts to play again after an initial play of your reel. This is defined as replays of 1 ms or more in the same reel session",
+      "id": "930191616662036/video_insights/fb_reels_replay_count/lifetime"
+    },
+    {
+      "name": "post_video_retention_graph",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": {
+            "0": 0.9983,
+            "1": 0.9983,
+            "2": 1,
+            "3": 1,
+            "4": 0.8251,
+            "5": 0.6587,
+            "6": 0.5705,
+            "7": 0.5246,
+            "8": 0.4788,
+            "9": 0.4278,
+            "10": 0.4007,
+            "11": 0.3837,
+            "12": 0.3633,
+            "13": 0.343,
+            "14": 0.326,
+            "15": 0.3107,
+            "16": 0.2971,
+            "17": 0.2886,
+            "18": 0.2835,
+            "19": 0.2699,
+            "20": 0.2649,
+            "21": 0.2615,
+            "22": 0.2513,
+            "23": 0.2462,
+            "24": 0.2462,
+            "25": 0.2394,
+            "26": 0.2326,
+            "27": 0.2156,
+            "28": 0.2071,
+            "29": 0.2003,
+            "30": 0.1935,
+            "31": 0.18,
+            "32": 0.1273
+          }
+        }
+      ],
+      "title": "Lifetime audience retention",
+      "description": "Lifetime: The percentage of times that your reel was played for at various timestamp segments out of the total number of plays. Most reels will start out at 100% retention and curve downwards as plays begin to drop off. If someone skipped the beginning of the reel, your curve will start at the timestamp where the reel started playing.",
+      "id": "930191616662036/video_insights/post_video_retention_graph/lifetime"
+    },
+    {
+      "name": "post_video_followers",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 0
+        }
+      ],
+      "title": "Lifetime follows by video",
+      "description": "Lifetime: The number of people who followed your Page or profile within 24 hours of watching this reel. This metric is estimated.",
+      "id": "930191616662036/video_insights/post_video_followers/lifetime"
+    }
+  ]
+}
+
+
+
+
+
+# 267930759729600/videos?fields=id,content_category,content_tags,created_time,custom_labels,description,embed_html,embeddable,event,from,is_crosspost_video,is_crossposting_eligible,is_episode,is_instagram_eligible,length,live_status,permalink_url,place,post_id,post_views,published,scheduled_publish_time,source,status,title,universal_video_id,updated_time,views
+
+{
+  "data": [
+    {
+      "id": "4628663244081932",
+      "content_category": "POLITICS",
+      "created_time": "2026-05-29T11:00:15+0000",
+      "description": "If you own a car, you’ll have a V5C. But do you know what it’s for? 🤔
+
+Watch to find out!",
+      "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"1920\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F4628663244081932%2F&width=1080\" style=\"border:none;overflow:hidden\" width=\"1080\"></iframe>",
+      "embeddable": true,
+      "format": [
+        {
+          "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"231\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F4628663244081932%2F&width=130\" style=\"border:none;overflow:hidden\" width=\"130\"></iframe>",
+          "filter": "130x130",
+          "height": 231,
+          "picture": "https://scontent-lhr6-2.xx.fbcdn.net/v/t15.5256-10/709466512_990071700553237_8475593802949552121_n.jpg?stp=dst-jpg_p130x130_tt6&_nc_cat=100&ccb=1-7&_nc_sid=d2b52d&_nc_ohc=kRejJZGDHPcQ7kNvwHsMu_L&_nc_oc=AdoaLVr2WaIp4FPOOWa_5SDxK9dhU6BUDVpApQ5D7DIvsrffyVn6Or4Y471mFnsmG4Q&_nc_zt=23&_nc_ht=scontent-lhr6-2.xx&edm=AGz5Y0wEAAAA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&_nc_tpa=Q5bMBQFZUn6YynybOviWWjNwUaLE49w2rMGb2SBNzIRtu8nJNSVylRx9fI3-OAE7mVI7iCR4H_B8LESqUA&oh=00_Af7Oh_pNijbz1LTGH0qWxUT5sG3KulE70aemP8c9jRZQ2g&oe=6A1F64A6",
+          "width": 130
+        },
+        {
+          "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"853\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F4628663244081932%2F&width=480\" style=\"border:none;overflow:hidden\" width=\"480\"></iframe>",
+          "filter": "480x480",
+          "height": 853,
+          "picture": "https://scontent-lhr6-2.xx.fbcdn.net/v/t15.5256-10/709466512_990071700553237_8475593802949552121_n.jpg?stp=dst-jpg_p480x480_tt6&_nc_cat=100&ccb=1-7&_nc_sid=d2b52d&_nc_ohc=kRejJZGDHPcQ7kNvwHsMu_L&_nc_oc=AdoaLVr2WaIp4FPOOWa_5SDxK9dhU6BUDVpApQ5D7DIvsrffyVn6Or4Y471mFnsmG4Q&_nc_zt=23&_nc_ht=scontent-lhr6-2.xx&edm=AGz5Y0wEAAAA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&_nc_tpa=Q5bMBQG-HaALNxqYo3TTs55tR0pSTOCSAia5iEuBvXmpH93a4WItpASUxJiCQZsTVR8HGNvgeJ0pBZQO1A&oh=00_Af7xiGofbHTkyrUIbiTK9We6mJE7HZa-oaWfU0kYDR_Odw&oe=6A1F64A6",
+          "width": 480
+        },
+        {
+          "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"1280\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F4628663244081932%2F&width=720\" style=\"border:none;overflow:hidden\" width=\"720\"></iframe>",
+          "filter": "720x720",
+          "height": 1280,
+          "picture": "https://scontent-lhr6-2.xx.fbcdn.net/v/t15.5256-10/709466512_990071700553237_8475593802949552121_n.jpg?stp=dst-jpg_p720x720_tt6&_nc_cat=100&ccb=1-7&_nc_sid=d2b52d&_nc_ohc=kRejJZGDHPcQ7kNvwHsMu_L&_nc_oc=AdoaLVr2WaIp4FPOOWa_5SDxK9dhU6BUDVpApQ5D7DIvsrffyVn6Or4Y471mFnsmG4Q&_nc_zt=23&_nc_ht=scontent-lhr6-2.xx&edm=AGz5Y0wEAAAA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&_nc_tpa=Q5bMBQF0enDOeTVlLcFFQ30EcBwaZqrDaxgAs7q04qtnu3i5waE6tPykVdoS8cmMaD1mwKs4HDb6cNo6Yg&oh=00_Af5_5QtEsBhxb1l5llDnzhKotFQsdntNx9dnlLWdmbWHkg&oe=6A1F64A6",
+          "width": 720
+        },
+        {
+          "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"1920\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F4628663244081932%2F&width=1080\" style=\"border:none;overflow:hidden\" width=\"1080\"></iframe>",
+          "filter": "native",
+          "height": 1920,
+          "picture": "https://scontent-lhr6-2.xx.fbcdn.net/v/t15.5256-10/709466512_990071700553237_8475593802949552121_n.jpg?_nc_cat=100&ccb=1-7&_nc_sid=d2b52d&_nc_ohc=kRejJZGDHPcQ7kNvwHsMu_L&_nc_oc=AdoaLVr2WaIp4FPOOWa_5SDxK9dhU6BUDVpApQ5D7DIvsrffyVn6Or4Y471mFnsmG4Q&_nc_zt=23&_nc_ht=scontent-lhr6-2.xx&edm=AGz5Y0wEAAAA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&_nc_tpa=Q5bMBQH3SFLuhJkuhuLP638JTT5P4v6wYrKTx3_dv8Lbg2P9nzXQw0NzHjSWXZmltq-iuyjO5vHTBw9CuQ&oh=00_Af4d_SfP97qx_VFMD9F5GjFFCtE1hMPTks6iNeQBY3Hwqg&oe=6A1F64A6",
+          "width": 1080
+        }
+      ],
+      "from": {
+        "name": "GOV.UK",
+        "id": "267930759729600"
+      },
+      "is_crosspost_video": false,
+      "is_crossposting_eligible": true,
+      "is_episode": false,
+      "is_instagram_eligible": false,
+      "length": 32.9,
+      "permalink_url": "/reel/4628663244081932/",
+      "post_id": "122285540666218201",
+      "post_views": 48,
+      "privacy": {
+        "allow": "",
+        "deny": "",
+        "description": "Public",
+        "friends": "",
+        "networks": "",
+        "value": "EVERYONE"
+      },
+      "published": true,
+      "source": "https://scontent-lhr8-1.xx.fbcdn.net/o1/v/t2/f2/m366/AQPHe4wAPw71YpuBzTCwAuzeinIxo-BHBzlcRg1klbGzWrgZiLoJTOPJxdnog07uFMgEjQLPY1YBX0Rnr-tAcGAUfSSj77V_GP9ubNvNg55B1Q.mp4?_nc_cat=111&_nc_sid=5e9851&_nc_ht=scontent-lhr8-1.xx.fbcdn.net&_nc_ohc=ZCQEw-FQl2IQ7kNvwEGFtpa&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNzIwLmRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHAiLCJ4cHZfYXNzZXRfaWQiOjE3ODMyMTIyMzk3MjgyMjgsImFzc2V0X2FnZV9kYXlzIjowLCJ2aV91c2VjYXNlX2lkIjoxMDEyMiwiZHVyYXRpb25fcyI6MzIsInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&vs=1617595e9a272cd6&_nc_vs=HBkcFQIYRWZiX2VwaGVtZXJhbC81NzQxNzdBRDQ5QTIzQkQ2RkY3QUUyNjEyRDJFNjU4MV9tdF8xX3ZpZGVvX2Rhc2hpbml0Lm1wNBUAAsgBEgAoABgAGwKIB3VzZV9vaWwBMRJwcm9ncmVzc2l2ZV9yZWNpcGUBMRUAACbIud3BzvSqBhUCKAJDMywXQEBzMzMzMzMYGWRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHARAHUCZZSeAQA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&edm=AGz5Y0wEAAAA&_nc_zt=28&_nc_tpa=Q5bMBQHROhTzy1rq_Z-HrDNJC0hfl5DLeDPcv2i7gvZykFJItliuXEYLWdCF5_cHJyeQo53k4mfCgIw9jA&oh=00_Af64bnBoFWGG0n037V20gXTKb2mGySUBoiQDmfhH5aw9KA&oe=6A1F72F5&bitrate=0&tag=dash_h264-basic-gen2_720p",
+      "status": {
+        "video_status": "ready",
+        "uploading_phase": {
+          "status": "complete"
+        },
+        "processing_phase": {
+          "status": "complete"
+        },
+        "publishing_phase": {
+          "status": "complete",
+          "publish_status": "published",
+          "publish_time": "2026-05-29T11:00:15+0000"
+        }
+      },
+      "updated_time": "2026-05-29T12:33:34+0000",
+      "views": 189
+    },
+    {
+      "id": "1538132961274152",
+      "content_category": "POLITICS",
+      "created_time": "2026-05-28T11:00:09+0000",
+      "description": "Did you know all dogs in the UK must be microchipped and registered by the time they’re 8 weeks old? 🐶
+
+You can ask your vet, local council or local rescue and rehoming centre if they can microchip your dog.",
+      "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"1920\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F1538132961274152%2F&width=1080\" style=\"border:none;overflow:hidden\" width=\"1080\"></iframe>",
+      "embeddable": true,
+      "format": [
+        {
+          "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"231\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F1538132961274152%2F&width=130\" style=\"border:none;overflow:hidden\" width=\"130\"></iframe>",
+          "filter": "130x130",
+          "height": 231,
+          "picture": "https://scontent-lhr6-1.xx.fbcdn.net/v/t15.5256-10/707114045_2069977584394728_6057273359846171032_n.jpg?stp=dst-jpg_p130x130_tt6&_nc_cat=109&ccb=1-7&_nc_sid=d2b52d&_nc_ohc=2sCxX8MkclMQ7kNvwFOJhY5&_nc_oc=AdoR2cn0QEdCy_5deqUdJw2Ga6nPFXki-agGvhdmuu2zkboZY3NItvduIB8ezHm-RME&_nc_zt=23&_nc_ht=scontent-lhr6-1.xx&edm=AGz5Y0wEAAAA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&_nc_tpa=Q5bMBQGvaFRA1MTnAPhM0K1Bn4FPyTHWSAE8j31KoWk9YojKqLSNTRhv6iiwxKAtXVGEwffH4ajgTVAsLA&oh=00_Af4nIJnRG6gpaAfoJAGZc0KWex8Vm2PPu0P0F4jajVrEcw&oe=6A1F5047",
+          "width": 130
+        },
+        {
+          "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"853\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F1538132961274152%2F&width=480\" style=\"border:none;overflow:hidden\" width=\"480\"></iframe>",
+          "filter": "480x480",
+          "height": 853,
+          "picture": "https://scontent-lhr6-1.xx.fbcdn.net/v/t15.5256-10/707114045_2069977584394728_6057273359846171032_n.jpg?stp=dst-jpg_p480x480_tt6&_nc_cat=109&ccb=1-7&_nc_sid=d2b52d&_nc_ohc=2sCxX8MkclMQ7kNvwFOJhY5&_nc_oc=AdoR2cn0QEdCy_5deqUdJw2Ga6nPFXki-agGvhdmuu2zkboZY3NItvduIB8ezHm-RME&_nc_zt=23&_nc_ht=scontent-lhr6-1.xx&edm=AGz5Y0wEAAAA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&_nc_tpa=Q5bMBQFXJVD9dXWz8j0WMRu4ndyhS8fviE3uQ-GZ4AVG8gBTzRWM8zkX0FLrDVmxZHeqJH1_XlGnR5oSMw&oh=00_Af5qdio_eTZnp5tEi5V2qmzdomq359RZfTqN66ytjdRZZA&oe=6A1F5047",
+          "width": 480
+        },
+        {
+          "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"1280\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F1538132961274152%2F&width=720\" style=\"border:none;overflow:hidden\" width=\"720\"></iframe>",
+          "filter": "720x720",
+          "height": 1280,
+          "picture": "https://scontent-lhr6-1.xx.fbcdn.net/v/t15.5256-10/707114045_2069977584394728_6057273359846171032_n.jpg?stp=dst-jpg_p720x720_tt6&_nc_cat=109&ccb=1-7&_nc_sid=d2b52d&_nc_ohc=2sCxX8MkclMQ7kNvwFOJhY5&_nc_oc=AdoR2cn0QEdCy_5deqUdJw2Ga6nPFXki-agGvhdmuu2zkboZY3NItvduIB8ezHm-RME&_nc_zt=23&_nc_ht=scontent-lhr6-1.xx&edm=AGz5Y0wEAAAA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&_nc_tpa=Q5bMBQHoMYGZziIGO-bKfzLpQHu2uN4EgwbpB1F5ZcCYLsiduzAB5Vgy1gSOH9NtxAphnWIgJeezhP1rAw&oh=00_Af5Zhnmx0qCUQSEsMbHLyoZ1XAUaR0FK8-0JGeKsURuc5A&oe=6A1F5047",
+          "width": 720
+        },
+        {
+          "embed_html": "<iframe allow=\"autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share\" allowfullscreen=\"true\" frameborder=\"0\" height=\"1920\" scrolling=\"no\" src=\"https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F1538132961274152%2F&width=1080\" style=\"border:none;overflow:hidden\" width=\"1080\"></iframe>",
+          "filter": "native",
+          "height": 1920,
+          "picture": "https://scontent-lhr6-1.xx.fbcdn.net/v/t15.5256-10/707114045_2069977584394728_6057273359846171032_n.jpg?_nc_cat=109&ccb=1-7&_nc_sid=d2b52d&_nc_ohc=2sCxX8MkclMQ7kNvwFOJhY5&_nc_oc=AdoR2cn0QEdCy_5deqUdJw2Ga6nPFXki-agGvhdmuu2zkboZY3NItvduIB8ezHm-RME&_nc_zt=23&_nc_ht=scontent-lhr6-1.xx&edm=AGz5Y0wEAAAA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&_nc_tpa=Q5bMBQGgZXR1S4AB9um2gaVcKLLbDvkXJc8wu7NMdfaCW_XnLM8zHJB5mdL7bUAnu7OpcBS1ZSy4I3lgcA&oh=00_Af72BPvaMEU1V6AgvBv_4xGtaB8Z-Jt1fW7VPzGeRV3JvQ&oe=6A1F5047",
+          "width": 1080
+        }
+      ],
+      "from": {
+        "name": "GOV.UK",
+        "id": "267930759729600"
+      },
+      "is_crosspost_video": false,
+      "is_crossposting_eligible": true,
+      "is_episode": false,
+      "is_instagram_eligible": true,
+      "length": 6.016,
+      "permalink_url": "/reel/1538132961274152/",
+      "post_id": "122285423804218201",
+      "post_views": 276,
+      "privacy": {
+        "allow": "",
+        "deny": "",
+        "description": "Public",
+        "friends": "",
+        "networks": "",
+        "value": "EVERYONE"
+      },
+      "published": true,
+      "source": "https://scontent-lhr6-1.xx.fbcdn.net/o1/v/t2/f2/m366/AQPdInNVP3f6RYTO-rae1huui4gUx-WXMryUZV8Sk9v--uj5h3YFCyR2JV-foon9LqLjZPT55KwEViF-ePe-iWkCLSRj0jZUXpNWepWkujtGjQ.mp4?_nc_cat=110&_nc_sid=5e9851&_nc_ht=scontent-lhr6-1.xx.fbcdn.net&_nc_ohc=no3UoFwoP9QQ7kNvwGupRSV&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNzIwLmRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHAiLCJ4cHZfYXNzZXRfaWQiOjk2ODE2NTcyNTgxNDE0NSwiYXNzZXRfYWdlX2RheXMiOjEsInZpX3VzZWNhc2VfaWQiOjEwMTIyLCJkdXJhdGlvbl9zIjo2LCJ1cmxnZW5fc291cmNlIjoid3d3In0%3D&ccb=17-1&vs=988f65a327f7b500&_nc_vs=HBksFQIYRWZiX2VwaGVtZXJhbC8xODQzQTEwRjUxMDdEQUVDNTM3MEUxOUIxMEVBNDNBN19tdF8xX3ZpZGVvX2Rhc2hpbml0Lm1wNBUAAsgBEgAVAhhAZmJfcGVybWFuZW50Lzc4NEJBNjk4MTBCODQ3NzlDN0UxNDQwNTNFQzY1NEJBX2F1ZGlvX2Rhc2hpbml0Lm1wNBUCAsgBEgAoABgAGwKIB3VzZV9vaWwBMRJwcm9ncmVzc2l2ZV9yZWNpcGUBMRUAACaC9t3i1KK4AxUCKAJDMywXQBgAAAAAAAAYGWRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHARAHUCZZSeAQA&_nc_gid=602S2cAW0wk9VV2m3xM8FQ&edm=AGz5Y0wEAAAA&_nc_zt=28&_nc_tpa=Q5bMBQFFDTqCLNv6yqaPaJRk-v6foYGWxJnPXNLJi5kW94nuBZW-dCHKfrywqQU459chYdvEoRFcRtGuew&oh=00_Af7smz4YbzbUF0UrnfM7v8WzF0Ww6xiwhRULmDBHqtGHJQ&oe=6A1F4B32&bitrate=4157998&tag=dash_h264-basic-gen2_720p",
+      "status": {
+        "video_status": "ready",
+        "uploading_phase": {
+          "status": "complete"
+        },
+        "processing_phase": {
+          "status": "complete"
+        },
+        "publishing_phase": {
+          "status": "complete",
+          "publish_status": "published",
+          "publish_time": "2026-05-28T11:00:09+0000"
+        }
+      },
+      "updated_time": "2026-05-29T11:01:32+0000",
+      "views": 1008
+    },

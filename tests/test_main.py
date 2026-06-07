@@ -23,7 +23,6 @@ from src.main import (
     get_operating_system_and_device_type_single_video_config,
     get_playback_details_single_video_config,
     get_playback_locations_single_video_config,
-    get_top_200_videos_for_date_range,
     get_traffic_sources_single_video_config,
     get_user_activity_single_video_config,
     get_video_titles,
@@ -318,20 +317,6 @@ class TestYouTubeAPIIntegration:
         expected_columns = list(_with_country_code(_with_video_id(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)).keys())
         assert result.column_names == expected_columns
         assert set(result.column("country_code").to_pylist()).issubset({"GB"})
-
-    @pytest.mark.integration
-    def test_analytics_api_returns_top_videos(self) -> None:
-        """Authenticate via the Analytics API and retrieve the most-viewed
-        videos for a short date range."""
-        analytics_service = get_youtube_analytics_api_v2_service()
-        result = get_top_200_videos_for_date_range(
-            analytics_service,
-            start_date="2024-01-01",
-            end_date="2024-01-08",
-        )
-        assert isinstance(result, pa.Table)
-        assert "video" in result.column_names
-        assert result.num_rows > 0
 
     @pytest.mark.integration
     def test_data_api_returns_video_title(self) -> None:

@@ -24,3 +24,26 @@ repos:
     hooks:
     -   id: flake8
         args: ["--max-line-length=119", "--extend-ignore=E203"]
+-   repo: local
+    hooks:
+    -   id: facebook-unit-tests
+        name: Facebook unit tests
+        language: system
+        entry: poetry run pytest tests/test_facebook.py -m "not integration" -q --tb=short
+        stages: [pre-commit]
+        pass_filenames: false
+        always_run: true
+    -   id: facebook-integrated-tests
+        name: Facebook API integration (pre-push)
+        language: system
+        entry: poetry run pytest tests/test_facebook.py -m integration -q --tb=short
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+    -   id: facebook-api-http-tests
+        name: Facebook metric tests (pre-push)
+        language: system
+        entry: poetry run pytest tests/test_facebook_http.py -m integration -q --tb=short
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

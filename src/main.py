@@ -4,7 +4,6 @@ import argparse
 import io
 import json
 import logging
-import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,9 +17,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from google.auth import exceptions as auth_exceptions
 from google.auth.transport.requests import Request
-from google.cloud import bigquery, secretmanager
+from google.cloud import bigquery
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource
+
+from src.authentication import FileTokenCache, get_gcp_secret
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ CLIENT_SECRET_STRING_SECRET = "youtube-processing-client-secret-web-app"
 CHANNEL_ID = "UCSNK6abAoM6Kj0SkHOStNLg"
 TOKEN_SECRET_VERSION = "10"  # token version or "latest"
 TOKEN_JSON_SECRET = "youtube-processing-web-client-token-json"
-TOKEN_CACHE_PATH = os.path.expanduser("~/.config/youtube_exploration/token_cache.json")
+_YOUTUBE_TOKEN_CACHE = FileTokenCache("~/.config/youtube_exploration/token_cache.json")
 
 
 youtube_traffic_sources = {
@@ -558,26 +559,23 @@ def get_video_titles(youtube_dataapi_v3_service: Resource, video_ids: list[str])
 
 
 def _save_token_cache(credentials: Credentials) -> None:
-    """Persists OAuth2 credentials to the local token cache file."""
-    os.makedirs(os.path.dirname(TOKEN_CACHE_PATH), exist_ok=True)
-    with open(TOKEN_CACHE_PATH, "w") as f:
-        json.dump(
-            {
-                "access_token": credentials.token,
-                "refresh_token": credentials.refresh_token,
-                "expiry": credentials.expiry.isoformat() if credentials.expiry else None,
-            },
-            f,
-        )
+    """Persists OAuth2 credentials to the file token cache."""
+    _YOUTUBE_TOKEN_CACHE.save(
+        {
+            "access_token": credentials.token,
+            "refresh_token": credentials.refresh_token,
+            "expires_at": credentials.expiry.isoformat() if credentials.expiry else None,
+        }
+    )
 
 
 def _load_token_cache(client_id: str, client_secret: str) -> Credentials | None:
-    """Loads OAuth2 credentials from the local token cache, refreshing if expired. Returns None if no cache exists."""
-    if not os.path.exists(TOKEN_CACHE_PATH):
+    """Loads OAuth2 credentials from the file token cache, refreshing if expired.
+    Returns None if no cache file exists."""
+    data = _YOUTUBE_TOKEN_CACHE.load()
+    if data is None:
         return None
-    with open(TOKEN_CACHE_PATH) as f:
-        data = json.load(f)
-    expiry = datetime.fromisoformat(data["expiry"]) if data.get("expiry") else None
+    expiry = datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None
     credentials = Credentials(
         token=data.get("access_token"),
         refresh_token=data.get("refresh_token"),
@@ -602,14 +600,6 @@ def _load_token_cache(client_id: str, client_secret: str) -> Credentials | None:
             return None
         _save_token_cache(credentials)
     return credentials
-
-
-def get_gcp_secret(secret_name: str, secret_version: str = "latest", project_id: str = PROJECT_ID) -> str:
-    """Retrieves a secret value from GCP Secret Manager."""
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/{project_id}/secrets/{secret_name}/versions/{secret_version}"
-    payload = client.access_secret_version(request={"name": name}).payload.data.decode("utf-8")
-    return payload
 
 
 def _build_service(api_name: str, version: str, scopes: list[str]) -> Resource:
@@ -1179,15 +1169,14 @@ def main() -> None:
         youtube_data_service = get_youtube_data_api_v3_service()
 
         country_codes: list[str] = []
+        set_of_country_codes = retrieve_data_from_bq(
+            PROJECT_ID, "govuk_youtube_channel_staging", "country_code_to_country_mapping"
+        )
 
         # Step 1: Get video IDs for the channel in the date range using Analytics API v2
-        if REFRESH_YOUTUBE_IDS_AND_METADATA:
-            set_of_country_codes = retrieve_data_from_bq(
-                PROJECT_ID, "govuk_youtube_channel_staging", "country_code_to_country_mapping"
-            )
-            # create_vido_ids using Analytics API v2 - could be replaced
-            # now we have Youtube Data API v3 access, but leaving as is
-            # for now to avoid hitting Data API quota limits during development
+        if REFRESH_YOUTUBE_IDS_AND_METADATA and FULL_DATASET:
+            # Gated on FULL_DATASET: refreshing and loading to BigQuery is a no-op in sample mode
+            # since the hardcoded IDs are used instead of the refreshed tables.
             youtube_id_table = get_all_videos_for_date_range(youtube_data_service)
 
             # Youtube Data API v3 functions
@@ -1212,16 +1201,15 @@ def main() -> None:
             )
 
         if FULL_DATASET:
-            # full data from BQ
-            logger.info(
-                "Skipping video ID and metadata retrieval. Set REFRESH_YOUTUBE_IDS_AND_METADATA to True to enable."
-            )
             youtube_ids_with_metadata_mapping_table = retrieve_data_from_bq(
                 PROJECT_ID, TARGET_DATASET, "video_id_metadata_mapping"
             )
             country_codes = set_of_country_codes["country_code"].to_pylist()
             TARGET_DATASET = STAGING_DATASSET
         else:
+            logger.info(
+                "Using hardcoded sample video IDs. Set --full-dataset to True to read video IDs from BigQuery."
+            )
             # small sample
             youtube_ids_with_metadata_mapping_table = pa.Table.from_arrays(
                 [
@@ -1353,25 +1341,25 @@ def main() -> None:
                     time_partition_field="month",
                 )
 
-                # engagement_and_content_table = _run_report(
-                #     youtube_analytics_service,
-                #     video_ids,
-                #     month_start,
-                #     month_end,
-                #     ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA,
-                #     get_engagement_and_content_sharing_config,
-                #     f"Engagement and Content Sharing ({month_str})",
-                # )
-                # engagement_and_content_table = engagement_and_content_table.add_column(
-                #     0, "month", pa.array([month_date] * len(engagement_and_content_table), type=pa.date32())
-                # )
-                # load_data_to_partitioned_bq(
-                #     engagement_and_content_table,
-                #     "engagement_and_content_location",
-                #     TARGET_DATASET,
-                #     _with_month(_with_video_id(ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA)),
-                #     time_partition_field="month",
-                # )
+                engagement_and_content_table = _run_report(
+                    youtube_analytics_service,
+                    video_ids,
+                    month_start,
+                    month_end,
+                    ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA,
+                    get_engagement_and_content_sharing_config,
+                    f"Engagement and Content Sharing ({month_str})",
+                )
+                engagement_and_content_table = engagement_and_content_table.add_column(
+                    0, "month", pa.array([month_date] * len(engagement_and_content_table), type=pa.date32())
+                )
+                load_data_to_partitioned_bq(
+                    engagement_and_content_table,
+                    "engagement_and_content_location",
+                    TARGET_DATASET,
+                    _with_month(_with_video_id(ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA)),
+                    time_partition_field="month",
+                )
 
     except Exception:
         logger.exception("Pipeline failed")

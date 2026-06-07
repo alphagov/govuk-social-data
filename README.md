@@ -91,13 +91,10 @@ poetry run python your_script.py
 ```
 
 
-### delete local cached credentials
+### Running tests
 ```bash
-# running all tests
-rm ~/.config/youtube_exploration/token_cache.json
-
 ## running unit tests
-poetry run pytest tests/test_main.py -m
+poetry run pytest tests/test_main.py
 
 # running a subset of unit tests
 poetry run pytest tests/test_main.py -m "not integration"
