@@ -231,7 +231,7 @@ def post_reactions_to_arrow(posts: list[Post]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in POST_REACTIONS_SCHEMA}
     for post in posts:
         reactions_insight = next(
-            (i for i in post.insights if i.name == "post_reactions_by_type_total"),
+            (i for i in post.insights if i.name == "post_reactions_by_type_total" and i.period == "lifetime"),
             None,
         )
         if reactions_insight is None or not isinstance(reactions_insight.value, dict):
@@ -252,7 +252,7 @@ def post_activity_to_arrow(posts: list[Post]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in POST_ACTIVITY_SCHEMA}
     for post in posts:
         activity_insight = next(
-            (i for i in post.insights if i.name == "post_activity_by_action_type_unique"),
+            (i for i in post.insights if i.name == "post_activity_by_action_type_unique" and i.period == "lifetime"),
             None,
         )
         if activity_insight is None or not isinstance(activity_insight.value, dict):
@@ -269,7 +269,7 @@ def post_clicks_by_type_to_arrow(posts: list[Post]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in POST_CLICKS_BY_TYPE_SCHEMA}
     for post in posts:
         clicks_insight = next(
-            (i for i in post.insights if i.name == "post_clicks_by_type"),
+            (i for i in post.insights if i.name == "post_clicks_by_type" and i.period == "lifetime"),
             None,
         )
         if clicks_insight is None or not isinstance(clicks_insight.value, dict):
