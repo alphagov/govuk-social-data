@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 import pyarrow as pa
 
 from instagram.models import IGAccount, IGAccountInsightMetric, IGMedia, IGMediaInsightMetric
@@ -10,6 +12,8 @@ ACCOUNT_SCHEMA: dict[str, pa.DataType] = {
     "followers_count": pa.int64(),
     "follows_count": pa.int64(),
     "media_count": pa.int64(),
+    "target_date": pa.date32(),
+    "ingestion_ts": pa.timestamp("us", tz="UTC"),
 }
 
 ACCOUNT_INSIGHTS_SCHEMA: dict[str, pa.DataType] = {
@@ -18,6 +22,8 @@ ACCOUNT_INSIGHTS_SCHEMA: dict[str, pa.DataType] = {
     "period": pa.string(),
     "end_time": pa.timestamp("s"),
     "value": pa.int64(),
+    "target_date": pa.date32(),
+    "ingestion_ts": pa.timestamp("us", tz="UTC"),
 }
 
 MEDIA_SCHEMA: dict[str, pa.DataType] = {
@@ -30,6 +36,8 @@ MEDIA_SCHEMA: dict[str, pa.DataType] = {
     "timestamp": pa.timestamp("s"),
     "like_count": pa.int64(),
     "comments_count": pa.int64(),
+    "target_date": pa.date32(),
+    "ingestion_ts": pa.timestamp("us", tz="UTC"),
 }
 
 MEDIA_INSIGHTS_SCHEMA: dict[str, pa.DataType] = {
@@ -37,6 +45,8 @@ MEDIA_INSIGHTS_SCHEMA: dict[str, pa.DataType] = {
     "metric": pa.string(),
     "period": pa.string(),
     "value": pa.int64(),
+    "target_date": pa.date32(),
+    "ingestion_ts": pa.timestamp("us", tz="UTC"),
 }
 
 
@@ -45,7 +55,7 @@ def _cast_table(data: dict, schema: dict[str, pa.DataType]) -> pa.Table:
     return table.cast(pa.schema([(k, schema[k]) for k in schema]))
 
 
-def account_to_arrow(account: IGAccount, ig_user_id: str) -> pa.Table:
+def account_to_arrow(account: IGAccount, ig_user_id: str, target_date: date, ingestion_ts: datetime) -> pa.Table:
     return _cast_table(
         {
             "ig_user_id": [ig_user_id],
@@ -55,12 +65,16 @@ def account_to_arrow(account: IGAccount, ig_user_id: str) -> pa.Table:
             "followers_count": [account.followers_count],
             "follows_count": [account.follows_count],
             "media_count": [account.media_count],
+            "target_date": [target_date],
+            "ingestion_ts": [ingestion_ts],
         },
         ACCOUNT_SCHEMA,
     )
 
 
-def account_insights_to_arrow(ig_user_id: str, metrics: list[IGAccountInsightMetric]) -> pa.Table:
+def account_insights_to_arrow(
+    ig_user_id: str, metrics: list[IGAccountInsightMetric], target_date: date, ingestion_ts: datetime
+) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in ACCOUNT_INSIGHTS_SCHEMA}
     for metric in metrics:
         for v in metric.values:
@@ -69,10 +83,12 @@ def account_insights_to_arrow(ig_user_id: str, metrics: list[IGAccountInsightMet
             rows["period"].append(metric.period)
             rows["end_time"].append(v.end_time)
             rows["value"].append(int(v.value))
+            rows["target_date"].append(target_date)
+            rows["ingestion_ts"].append(ingestion_ts)
     return _cast_table(rows, ACCOUNT_INSIGHTS_SCHEMA)
 
 
-def media_to_arrow(ig_user_id: str, media: list[IGMedia]) -> pa.Table:
+def media_to_arrow(ig_user_id: str, media: list[IGMedia], target_date: date, ingestion_ts: datetime) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in MEDIA_SCHEMA}
     for m in media:
         rows["ig_user_id"].append(ig_user_id)
@@ -84,10 +100,14 @@ def media_to_arrow(ig_user_id: str, media: list[IGMedia]) -> pa.Table:
         rows["timestamp"].append(m.timestamp)
         rows["like_count"].append(m.like_count)
         rows["comments_count"].append(m.comments_count)
+        rows["target_date"].append(target_date)
+        rows["ingestion_ts"].append(ingestion_ts)
     return _cast_table(rows, MEDIA_SCHEMA)
 
 
-def media_insights_to_arrow(media_id: str, insights: list[IGMediaInsightMetric]) -> pa.Table:
+def media_insights_to_arrow(
+    media_id: str, insights: list[IGMediaInsightMetric], target_date: date, ingestion_ts: datetime
+) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in MEDIA_INSIGHTS_SCHEMA}
     for insight in insights:
         if insight.value is None:
@@ -96,4 +116,6 @@ def media_insights_to_arrow(media_id: str, insights: list[IGMediaInsightMetric])
         rows["metric"].append(insight.name)
         rows["period"].append(insight.period)
         rows["value"].append(insight.value)
+        rows["target_date"].append(target_date)
+        rows["ingestion_ts"].append(ingestion_ts)
     return _cast_table(rows, MEDIA_INSIGHTS_SCHEMA)
