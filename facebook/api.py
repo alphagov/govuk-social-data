@@ -165,8 +165,9 @@ class FacebookClient:
         data = self._get(path, params)
         results.extend(data.get("data", []))
         while max_results is None or len(results) < max_results:
-            after = data.get("paging", {}).get("cursors", {}).get("after")
-            if not after:
+            paging = data.get("paging", {})
+            after = paging.get("cursors", {}).get("after")
+            if not after or not paging.get("next"):
                 break
             data = self._get(path, {**(params or {}), "after": after})
             results.extend(data.get("data", []))
@@ -331,6 +332,8 @@ class FacebookClient:
 
         insights: list[PostInsightMetric] = []
         for item in data.get("data", []):
+            if item.get("period") != "lifetime":
+                continue
             values = item.get("values", [])
             raw_value = values[0]["value"] if values else 0
             insights.append(
