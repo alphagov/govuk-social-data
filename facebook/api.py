@@ -73,6 +73,17 @@ VIDEO_DICT_METRICS = [
 ]
 VIDEO_METRICS = VIDEO_SCALAR_METRICS + VIDEO_DICT_METRICS
 
+# video_reels object 
+REEL_SCALAR_METRICS = {
+    "video_id", 
+    "upload_url", 
+    "success", 
+    "message", 
+    "post_id" 
+}
+
+REEL_DICT_METRICS = {}
+
 
 # ------------------------------------------------------------------
 # Auth
@@ -270,7 +281,7 @@ class FacebookClient:
     # ------------------------------------------------------------------
 
     def get_videos(self, page_id: str, limit: int | None = None, max_results: int | None = None) -> list[Video]:
-        params: dict = {"fields": "id,title,description,created_time,length"}
+        params: dict = {"fields": "id,title,description,created_time,length,post_id"}
         if limit is not None:
             params["limit"] = limit
         raw_videos = self._paginate(f"{page_id}/videos", params=params, max_results=max_results)
@@ -280,6 +291,7 @@ class FacebookClient:
                 Video(
                     video_id=raw["id"],
                     page_id=page_id,
+                    associated_post_id=raw.get("post_id"),
                     title=raw.get("title"),
                     description=raw.get("description"),
                     created_time=raw["created_time"],

@@ -172,16 +172,17 @@ def test_http_post_metric(_http, metric):
 
 @pytest.mark.integration
 def test_http_videos_edge(_http):
-    """GET /{page_id}/videos?fields=id,title,description,created_time,length"""
+    """GET /{page_id}/videos?fields=id,title,description,created_time,length,post_id"""
     r = _get(
         f"{_http['page_id']}/videos",
         _http["token"],
-        {"fields": "id,title,description,created_time,length"},
+        {"fields": "id,title,description,created_time,length,post_id"},
     )
     assert r.status_code == 200, r.text
     data = r.json()
     assert "data" in data
     assert len(data["data"]) > 0, "Expected at least one video"
+    assert any("post_id" in item for item in data["data"]), "Expected post_id in at least one video"
 
 
 # ------------------------------------------------------------------

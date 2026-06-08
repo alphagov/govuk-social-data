@@ -5,18 +5,20 @@ import pytest
 
 
 from facebook.api import PAGE_DAY_METRICS, PAGE_LIFETIME_METRICS, POST_METRICS, VIDEO_METRICS
-from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric
+from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric, Video
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
     PAGE_INSIGHTS_SCHEMA,
     POST_INSIGHTS_SCHEMA,
     POST_REACTIONS_SCHEMA,
     POSTS_SCHEMA,
+    VIDEOS_SCHEMA,
     page_info_to_arrow,
     page_insights_to_arrow,
     post_insights_to_arrow,
     post_reactions_to_arrow,
     posts_to_arrow,
+    videos_to_arrow,
 )
 
 
@@ -207,6 +209,50 @@ def test_post_reactions_to_arrow_missing_reactions_skipped(sample_posts):
     # Posts with no reaction insight should produce an empty table
     table = post_reactions_to_arrow(sample_posts)
     assert len(table) == 0
+
+
+# ------------------------------------------------------------------
+# videos_to_arrow
+# ------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_videos() -> list[Video]:
+    return [
+        Video(
+            video_id="vid_001",
+            page_id=PAGE_ID,
+            associated_post_id="123456789_vid001",
+            title="Test Video",
+            description="A test video",
+            created_time=TS,
+            length=120.5,
+        ),
+        Video(
+            video_id="vid_002",
+            page_id=PAGE_ID,
+            # associated_post_id intentionally omitted — defaults to None
+            title=None,
+            description=None,
+            created_time=datetime(2024, 6, 2, 10, 0, 0, tzinfo=timezone.utc),
+            length=None,
+        ),
+    ]
+
+
+def test_videos_to_arrow_schema(sample_videos):
+    table = videos_to_arrow(sample_videos)
+    assert table.schema == pa.schema([(k, VIDEOS_SCHEMA[k]) for k in VIDEOS_SCHEMA])
+
+
+def test_videos_to_arrow_associated_post_id(sample_videos):
+    table = videos_to_arrow(sample_videos)
+    assert table["associated_post_id"][0].as_py() == "123456789_vid001"
+
+
+def test_videos_to_arrow_nullable_associated_post_id(sample_videos):
+    table = videos_to_arrow(sample_videos)
+    assert table["associated_post_id"][1].as_py() is None
 
 
 # ------------------------------------------------------------------

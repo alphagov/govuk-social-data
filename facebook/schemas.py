@@ -3,6 +3,8 @@ import pyarrow as pa
 from facebook.api import VIDEO_SCALAR_METRICS
 from facebook.models import Page, PageInsightMetric, Post, Video
 
+## This file contains the schema objects for the pyarrow upload to bq
+
 PAGE_INFO_SCHEMA: dict[str, pa.DataType] = {
     "page_id": pa.string(),
     "name": pa.string(),
@@ -62,6 +64,7 @@ POST_CLICKS_BY_TYPE_SCHEMA: dict[str, pa.DataType] = {
 VIDEOS_SCHEMA: dict[str, pa.DataType] = {
     "video_id": pa.string(),
     "page_id": pa.string(),
+    "associated_post_id": pa.string(),
     "title": pa.string(),
     "description": pa.string(),
     "created_time": pa.timestamp("s"),
@@ -152,12 +155,13 @@ def post_insights_to_arrow(posts: list[Post]) -> pa.Table:
             rows["value"].append(insight.value)
     return _cast_table(rows, POST_INSIGHTS_SCHEMA)
 
-
+# toadd 
 def videos_to_arrow(videos: list[Video]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in VIDEOS_SCHEMA}
     for video in videos:
         rows["video_id"].append(video.video_id)
         rows["page_id"].append(video.page_id)
+        rows["associated_post_id"].append(video.associated_post_id)
         rows["title"].append(video.title)
         rows["description"].append(video.description)
         rows["created_time"].append(video.created_time)
