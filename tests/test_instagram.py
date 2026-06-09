@@ -276,7 +276,7 @@ def test_integration_get_account(_ig):
 def test_integration_get_media(_ig):
     media = _ig["client"].get_media(_ig["ig_user_id"], max_results=5)
     assert len(media) > 0
-    table = media_to_arrow(_ig["ig_user_id"], media)
+    table = media_to_arrow(_ig["ig_user_id"], media, TARGET_DATE, INGESTION_TS)
     assert "media_id" in table.column_names
 
 
@@ -325,7 +325,7 @@ def test_integration_account_insights_arrow(_ig):
     until = date.today() - timedelta(days=1)
     since = until - timedelta(days=6)
     metrics = _ig["client"].get_account_insights(_ig["ig_user_id"], since, until)
-    table = account_insights_to_arrow(_ig["ig_user_id"], metrics)
+    table = account_insights_to_arrow(_ig["ig_user_id"], metrics, TARGET_DATE, INGESTION_TS)
     assert len(table) > 0
     assert "metric" in table.column_names
 
@@ -333,6 +333,6 @@ def test_integration_account_insights_arrow(_ig):
 @pytest.mark.integration
 def test_integration_media_arrow(_ig):
     media = _ig["client"].get_media(_ig["ig_user_id"], max_results=5)
-    table = media_to_arrow(_ig["ig_user_id"], media)
+    table = media_to_arrow(_ig["ig_user_id"], media, TARGET_DATE, INGESTION_TS)
     assert len(table) > 0
     assert "media_id" in table.column_names

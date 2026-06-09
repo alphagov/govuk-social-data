@@ -1,25 +1,34 @@
 import argparse
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+import pyarrow as pa
 
 from instagram.api import ACCOUNT_DAY_METRICS, ACCOUNT_TOTAL_VALUE_METRICS, MEDIA_LIFETIME_METRICS, build_client
-from instagram.schemas import account_insights_to_arrow, account_to_arrow, media_insights_to_arrow, media_to_arrow
+from instagram.schemas import (
+    ACCOUNT_INSIGHTS_SCHEMA,
+    ACCOUNT_SCHEMA,
+    MEDIA_INSIGHTS_SCHEMA,
+    MEDIA_SCHEMA,
+    account_insights_to_arrow,
+    account_to_arrow,
+    media_insights_to_arrow,
+    media_to_arrow,
+)
+from src.bigquery_upload_helpers import load_data_to_partitioned_bq
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+DATASET = "govuk_instagram"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Instagram Graph API analytics pipeline")
     parser.add_argument(
-        "--start-date",
-        default=(datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d"),
-        help="Start date (YYYY-MM-DD). Defaults to yesterday.",
-    )
-    parser.add_argument(
-        "--end-date",
-        default=(datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d"),
-        help="End date (YYYY-MM-DD). Defaults to yesterday.",
+        "--target-date",
+        default=(date.today() - timedelta(days=1)).isoformat(),
+        help="Target date (YYYY-MM-DD). Defaults to yesterday.",
     )
     parser.add_argument(
         "--media-limit",
@@ -38,12 +47,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    logger.info("Date range: %s to %s", args.start_date, args.end_date)
-
-    from datetime import date
-
-    start_date = date.fromisoformat(args.start_date)
-    end_date = date.fromisoformat(args.end_date)
+    target_date = date.fromisoformat(args.target_date)
+    ingestion_ts = datetime.now(timezone.utc)
+    logger.info("Target date: %s | Ingestion timestamp: %s", target_date, ingestion_ts)
 
     client, ig_user_id = build_client()
     logger.info("Using IG user ID: %s", ig_user_id)
@@ -51,30 +57,29 @@ def main() -> None:
     # Account info
     logger.info("Fetching account info...")
     account = client.get_account(ig_user_id)
-    account_table = account_to_arrow(account, ig_user_id)
-    print("\n=== Account Info ===")
-    print(account_table.to_pydict())
+    account_table = account_to_arrow(account, ig_user_id, target_date, ingestion_ts)
+    rows = load_data_to_partitioned_bq(account_table, "instagram_account", DATASET, ACCOUNT_SCHEMA, "target_date")
+    logger.info("Loaded %d rows to instagram_account", rows)
 
-    # Account insights — day metrics
-    logger.info("Fetching account insights (%s → %s)...", args.start_date, args.end_date)
-    day_metrics = client.get_account_insights(ig_user_id, start_date, end_date, ACCOUNT_DAY_METRICS)
+    # Account insights
+    logger.info("Fetching account insights for %s...", target_date)
+    day_metrics = client.get_account_insights(ig_user_id, target_date, target_date, ACCOUNT_DAY_METRICS)
     total_value_metrics = client.get_account_total_value_insights(
-        ig_user_id, start_date, end_date, ACCOUNT_TOTAL_VALUE_METRICS
+        ig_user_id, target_date, target_date, ACCOUNT_TOTAL_VALUE_METRICS
     )
-    all_metrics = day_metrics + total_value_metrics
-    insights_table = account_insights_to_arrow(ig_user_id, all_metrics)
-    print(f"\n=== Account Insights ({len(insights_table)} rows) ===")
-    print(insights_table.to_pydict())
+    insights_table = account_insights_to_arrow(ig_user_id, day_metrics + total_value_metrics, target_date, ingestion_ts)
+    rows = load_data_to_partitioned_bq(
+        insights_table, "instagram_account_insights", DATASET, ACCOUNT_INSIGHTS_SCHEMA, "target_date"
+    )
+    logger.info("Loaded %d rows to instagram_account_insights", rows)
 
     # Media
-    logger.info(
-        "Fetching media%s...", f" (limit {args.media_limit})" if args.media_limit else ""
-    )
+    logger.info("Fetching media%s...", f" (limit {args.media_limit})" if args.media_limit else "")
     media = client.get_media(ig_user_id, max_results=args.media_limit)
     logger.info("Found %d media items", len(media))
-    media_table = media_to_arrow(ig_user_id, media)
-    print(f"\n=== Media ({len(media_table)} rows) ===")
-    print(media_table.to_pydict())
+    media_table = media_to_arrow(ig_user_id, media, target_date, ingestion_ts)
+    rows = load_data_to_partitioned_bq(media_table, "instagram_media", DATASET, MEDIA_SCHEMA, "target_date")
+    logger.info("Loaded %d rows to instagram_media", rows)
 
     # Media insights
     if args.run_media_insights:
@@ -84,17 +89,16 @@ def main() -> None:
             logger.info("Media %d/%d: %s", i, len(media), m.id)
             insights = client.get_media_insights(m.id, MEDIA_LIFETIME_METRICS)
             if insights:
-                insight_table = media_insights_to_arrow(m.id, insights)
-                all_media_insights.append(insight_table)
+                all_media_insights.append(media_insights_to_arrow(m.id, insights, target_date, ingestion_ts))
 
         if all_media_insights:
-            import pyarrow as pa
-
             combined = pa.concat_tables(all_media_insights)
-            print(f"\n=== Media Insights ({len(combined)} rows) ===")
-            print(combined.to_pydict())
+            rows = load_data_to_partitioned_bq(
+                combined, "instagram_media_insights", DATASET, MEDIA_INSIGHTS_SCHEMA, "target_date"
+            )
+            logger.info("Loaded %d rows to instagram_media_insights", rows)
         else:
-            print("\n=== Media Insights (0 rows) ===")
+            logger.info("No media insights to load")
     else:
         logger.info("Skipping media insights (--no-run-media-insights)")
 

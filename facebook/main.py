@@ -36,50 +36,11 @@ from facebook.schemas import (
     videos_to_arrow,
 )
 from src.authentication import get_gcp_secret
-from src.bigquery_upload_helpers import load_data_to_partitioned_bq
+from src.bigquery_upload_helpers import upload_partitioned
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
-
-_TARGET_DATE_FIELD = "target_date"
-
-
-def _enrich(table: pa.Table, target_date: object, ingestion_timestamp: datetime) -> pa.Table:
-    table = table.append_column(
-        _TARGET_DATE_FIELD,
-        pa.array([target_date] * len(table), type=pa.date32()),
-    )
-    table = table.append_column(
-        "ingestion_timestamp",
-        pa.array([ingestion_timestamp] * len(table), type=pa.timestamp("s")),
-    )
-    return table
-
-
-def _with_date_cols(schema: dict[str, pa.DataType]) -> dict[str, pa.DataType]:
-    return {**schema, _TARGET_DATE_FIELD: pa.date32(), "ingestion_timestamp": pa.timestamp("s")}
-
-
-def _upload(
-    table: pa.Table,
-    table_name: str,
-    schema: dict[str, pa.DataType],
-    dataset_name: str,
-    target_date: object,
-    ingestion_timestamp: datetime,
-) -> None:
-    if len(table) == 0:
-        logger.info("Skipping upload for %s — table is empty", table_name)
-        return
-    n = load_data_to_partitioned_bq(
-        _enrich(table, target_date, ingestion_timestamp),
-        table_name,
-        dataset_name,
-        _with_date_cols(schema),
-        time_partition_field=_TARGET_DATE_FIELD,
-    )
-    logger.info("Uploaded %d rows → %s.%s", n, dataset_name, table_name)
 
 
 def parse_args() -> argparse.Namespace:
@@ -160,12 +121,12 @@ def main() -> None:
     # Page info
     logger.info("Fetching page info...")
     page = client.get_page(page_id)
-    _upload(page_info_to_arrow(page), "facebook_page_info", PAGE_INFO_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    upload_partitioned(page_info_to_arrow(page), "facebook_page_info", PAGE_INFO_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
     # Page insights
     logger.info("Fetching page insights for %s...", args.start_date)
     page_insights = client.get_page_insights(page_id, since=args.start_date, until=args.end_date)
-    _upload(
+    upload_partitioned(
         page_insights_to_arrow(page_id, page_insights),
         "facebook_page_insights",
         PAGE_INSIGHTS_SCHEMA,
@@ -179,7 +140,7 @@ def main() -> None:
         logger.info("Fetching posts%s...", f" (limit {args.post_limit})" if args.post_limit else "")
         posts = client.get_posts(page_id, limit=args.post_limit, max_results=args.post_limit)
         logger.info("Found %d posts", len(posts))
-        _upload(posts_to_arrow(posts), "facebook_posts", POSTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+        upload_partitioned(posts_to_arrow(posts), "facebook_posts", POSTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
         if args.run_post_insights:
             logger.info("Fetching insights for %d posts...", len(posts))
@@ -188,27 +149,10 @@ def main() -> None:
                 logger.info("Post %d/%d: %s", i, len(posts), post.post_id)
                 posts_with_insights.append(client.get_post_insights(post))
 
-            _upload(post_insights_to_arrow(posts_with_insights), "facebook_post_insights", POST_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            _upload(post_reactions_to_arrow(posts_with_insights), "facebook_post_reactions", POST_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            _upload(post_activity_to_arrow(posts_with_insights), "facebook_post_activity", POST_ACTIVITY_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            _upload(post_clicks_by_type_to_arrow(posts_with_insights), "facebook_post_clicks_by_type", POST_CLICKS_BY_TYPE_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            post_insights_table = post_insights_to_arrow(posts_with_insights)
-            print(f"\n=== Post Insights ({len(post_insights_table)} rows) ===")
-            print(post_insights_table.to_pydict())
-
-            post_reactions_table = post_reactions_to_arrow(posts_with_insights)
-            print(f"\n=== Post Reactions ({len(post_reactions_table)} rows) ===")
-            print(post_reactions_table.to_pydict())
-
-            post_activity_table = post_activity_to_arrow(posts_with_insights)
-            print(f"\n=== Post Activity by Action Type ({len(post_activity_table)} rows) ===")
-            print(post_activity_table.to_pydict())
-
-
-
-            post_clicks_table = post_clicks_by_type_to_arrow(posts_with_insights)
-            print(f"\n=== Post Clicks by Type ({len(post_clicks_table)} rows) ===")
-            print(post_clicks_table.to_pydict())
+            upload_partitioned(post_insights_to_arrow(posts_with_insights), "facebook_post_insights", POST_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(post_reactions_to_arrow(posts_with_insights), "facebook_post_reactions", POST_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(post_activity_to_arrow(posts_with_insights), "facebook_post_activity", POST_ACTIVITY_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(post_clicks_by_type_to_arrow(posts_with_insights), "facebook_post_clicks_by_type", POST_CLICKS_BY_TYPE_SCHEMA, args.dataset, target_date, ingestion_timestamp)
         else:
             logger.info("Skipping post insights (--no-run-post-insights)")
     else:
@@ -219,7 +163,7 @@ def main() -> None:
         logger.info("Fetching videos%s...", f" (limit {args.video_limit})" if args.video_limit else "")
         videos = client.get_videos(page_id, limit=args.video_limit, max_results=args.video_limit)
         logger.info("Found %d videos", len(videos))
-        _upload(videos_to_arrow(videos), "facebook_videos", VIDEOS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+        upload_partitioned(videos_to_arrow(videos), "facebook_videos", VIDEOS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
         if args.run_video_insights:
             logger.info("Fetching insights for %d videos...", len(videos))
@@ -228,10 +172,10 @@ def main() -> None:
                 logger.info("Video %d/%d: %s", i, len(videos), video.video_id)
                 videos_with_insights.append(client.get_video_insights(video))
 
-            _upload(video_insights_to_arrow(videos_with_insights), "facebook_video_insights", VIDEO_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            _upload(video_reel_reactions_to_arrow(videos_with_insights), "facebook_video_reel_reactions", VIDEO_REEL_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            _upload(video_reel_social_actions_to_arrow(videos_with_insights), "facebook_video_reel_social_actions", VIDEO_REEL_SOCIAL_ACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            _upload(video_reel_retention_to_arrow(videos_with_insights), "facebook_video_reel_retention", VIDEO_REEL_RETENTION_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(video_insights_to_arrow(videos_with_insights), "facebook_video_insights", VIDEO_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(video_reel_reactions_to_arrow(videos_with_insights), "facebook_video_reel_reactions", VIDEO_REEL_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(video_reel_social_actions_to_arrow(videos_with_insights), "facebook_video_reel_social_actions", VIDEO_REEL_SOCIAL_ACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(video_reel_retention_to_arrow(videos_with_insights), "facebook_video_reel_retention", VIDEO_REEL_RETENTION_SCHEMA, args.dataset, target_date, ingestion_timestamp)
         else:
             logger.info("Skipping video insights (--no-run-video-insights)")
     else:
@@ -263,3 +207,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+ 
