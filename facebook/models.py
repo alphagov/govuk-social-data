@@ -105,6 +105,7 @@ class Post(BaseModel):
     post_type: str
     permalink_url: str | None = None
     insights: list[PostInsightMetric] = []
+    reactions: dict[str, int] = Field(default_factory=dict)
 
 
 class Page(BaseModel):

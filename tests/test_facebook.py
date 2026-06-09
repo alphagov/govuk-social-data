@@ -91,12 +91,8 @@ def sample_posts_with_insights(sample_posts) -> list[Post]:
             "insights": [
                 PostInsightMetric(name="post_impressions", period="lifetime", value=300),
                 PostInsightMetric(name="post_engaged_users", period="lifetime", value=50),
-                PostInsightMetric(
-                    name="post_reactions_by_type_total",
-                    period="lifetime",
-                    value={"LIKE": 40, "LOVE": 5, "WOW": 2, "HAHA": 1, "SORRY": 0, "ANGER": 0},
-                ),
-            ]
+            ],
+            "reactions": {"LIKE": 40, "LOVE": 5, "WOW": 2, "HAHA": 1, "SAD": 0, "ANGRY": 0},
         }
     )
     return posts
@@ -176,8 +172,9 @@ def test_post_insights_to_arrow_schema(sample_posts_with_insights):
 
 def test_post_insights_to_arrow_skips_dict_values(sample_posts_with_insights):
     table = post_insights_to_arrow(sample_posts_with_insights)
-    # post_reactions_by_type_total has a dict value — must be excluded from this table
-    assert "post_reactions_by_type_total" not in table["metric"].to_pylist()
+    # dict-valued metrics (e.g. post_clicks_by_type) must be excluded from this table
+    for value in table["value"].to_pylist():
+        assert isinstance(value, int), f"Expected int value in post_insights table, got {type(value)}"
 
 
 def test_post_insights_to_arrow_row_count(sample_posts_with_insights):
@@ -202,7 +199,8 @@ def test_post_reactions_to_arrow_values(sample_posts_with_insights):
     assert table["post_id"][0].as_py() == POST_ID
     assert table["like"][0].as_py() == 40
     assert table["love"][0].as_py() == 5
-    assert table["anger"][0].as_py() == 0
+    assert table["sad"][0].as_py() == 0
+    assert table["angry"][0].as_py() == 0
 
 
 def test_post_reactions_to_arrow_missing_reactions_skipped(sample_posts):

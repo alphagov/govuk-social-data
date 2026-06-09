@@ -43,8 +43,8 @@ POST_REACTIONS_SCHEMA: dict[str, pa.DataType] = {
     "love": pa.int64(),
     "wow": pa.int64(),
     "haha": pa.int64(),
-    "sorry": pa.int64(),
-    "anger": pa.int64(),
+    "sad": pa.int64(),
+    "angry": pa.int64(),
 }
 
 # post_activity_by_action_type_unique: {action_type: unique_users} — keys are variable
@@ -230,20 +230,15 @@ def video_reel_retention_to_arrow(videos: list[Video]) -> pa.Table:
 def post_reactions_to_arrow(posts: list[Post]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in POST_REACTIONS_SCHEMA}
     for post in posts:
-        reactions_insight = next(
-            (i for i in post.insights if i.name == "post_reactions_by_type_total" and i.period == "lifetime"),
-            None,
-        )
-        if reactions_insight is None or not isinstance(reactions_insight.value, dict):
+        if not post.reactions:
             continue
-        raw: dict = reactions_insight.value
         rows["post_id"].append(post.post_id)
-        rows["like"].append(raw.get("LIKE", 0))
-        rows["love"].append(raw.get("LOVE", 0))
-        rows["wow"].append(raw.get("WOW", 0))
-        rows["haha"].append(raw.get("HAHA", 0))
-        rows["sorry"].append(raw.get("SORRY", 0))
-        rows["anger"].append(raw.get("ANGER", 0))
+        rows["like"].append(post.reactions.get("LIKE", 0))
+        rows["love"].append(post.reactions.get("LOVE", 0))
+        rows["wow"].append(post.reactions.get("WOW", 0))
+        rows["haha"].append(post.reactions.get("HAHA", 0))
+        rows["sad"].append(post.reactions.get("SAD", 0))
+        rows["angry"].append(post.reactions.get("ANGRY", 0))
     return _cast_table(rows, POST_REACTIONS_SCHEMA)
 
 

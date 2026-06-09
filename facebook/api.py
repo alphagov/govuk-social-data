@@ -49,13 +49,22 @@ POST_METRICS = [
     # post_impressions deprecated Nov 2025 → post_media_view
     # post_impressions_unique deprecated Jun 2025 → post_total_media_view_unique
     # post_engagements — accepted (HTTP 200) but always returns empty data; omitted
+    # post_reactions_by_type_total deprecated/broken — always returns {} — reactions now via /reactions edge
     "post_media_view",
     "post_total_media_view_unique",
     "post_activity_by_action_type_unique",  # dict: {action_type: unique_users}
     "post_clicks",
     "post_clicks_by_type",  # dict: {click_type: count}
-    "post_reactions_by_type_total",  # dict: {reaction_type: count}
 ]
+
+_REACTION_FIELDS = (
+    "reactions.type(LIKE).limit(0).summary(total_count).as(like_reactions),"
+    "reactions.type(LOVE).limit(0).summary(total_count).as(love_reactions),"
+    "reactions.type(WOW).limit(0).summary(total_count).as(wow_reactions),"
+    "reactions.type(HAHA).limit(0).summary(total_count).as(haha_reactions),"
+    "reactions.type(SAD).limit(0).summary(total_count).as(sad_reactions),"
+    "reactions.type(ANGRY).limit(0).summary(total_count).as(angry_reactions)"
+)
 
 VIDEO_SCALAR_METRICS = [
     "post_video_avg_time_watched",
@@ -255,7 +264,9 @@ class FacebookClient:
     # ------------------------------------------------------------------
 
     def get_posts(self, page_id: str, limit: int | None = None, max_results: int | None = None) -> list[Post]:
-        params: dict = {"fields": "id,message,created_time,permalink_url,attachments{type}"}
+        params: dict = {
+            "fields": f"id,message,created_time,permalink_url,attachments{{type}},{_REACTION_FIELDS}"
+        }
         if limit is not None:
             params["limit"] = limit
         raw_posts = self._paginate(f"{page_id}/posts", params=params, max_results=max_results)
@@ -265,6 +276,14 @@ class FacebookClient:
             attachments = raw.get("attachments", {}).get("data", [])
             if attachments:
                 post_type = attachments[0].get("type", "status")
+            reactions = {
+                "LIKE":  raw.get("like_reactions",  {}).get("summary", {}).get("total_count", 0),
+                "LOVE":  raw.get("love_reactions",  {}).get("summary", {}).get("total_count", 0),
+                "WOW":   raw.get("wow_reactions",   {}).get("summary", {}).get("total_count", 0),
+                "HAHA":  raw.get("haha_reactions",  {}).get("summary", {}).get("total_count", 0),
+                "SAD":   raw.get("sad_reactions",   {}).get("summary", {}).get("total_count", 0),
+                "ANGRY": raw.get("angry_reactions", {}).get("summary", {}).get("total_count", 0),
+            }
             posts.append(
                 Post(
                     post_id=raw["id"],
@@ -273,6 +292,7 @@ class FacebookClient:
                     created_time=raw["created_time"],
                     post_type=post_type,
                     permalink_url=raw.get("permalink_url"),
+                    reactions=reactions,
                 )
             )
         return posts
