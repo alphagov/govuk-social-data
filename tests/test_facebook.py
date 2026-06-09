@@ -357,10 +357,9 @@ def test_integration_get_posts(_fb):
 
 
 @pytest.mark.integration
+def test_integration_get_videos(_fb):
     videos = _fb["client"].get_videos(_fb["page_id"], limit=5, max_results=5)
     assert len(videos) > 0
-    from facebook.schemas import videos_to_arrow
-
     table = videos_to_arrow(videos)
     assert "video_id" in table.column_names
 
