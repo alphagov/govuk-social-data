@@ -79,13 +79,13 @@ Previously valid account metrics now removed (Oct 2024):
 python -m instagram.main
 
 # Custom date range, limit media items
-python -m instagram.main --start-date 2026-05-01 --end-date 2026-05-31 --media-limit 10
+python -m instagram.main --target-date 2026-06-08 --media-limit 10
 
 # Skip per-media insights
 python -m instagram.main --no-run-media-insights
 ```
 
-Note: `follower_count` will fail with HTTP 400 if `--start-date` is more than 30 days ago. Use `--start-date` within the last 30 days when account insights are needed.
+Note: `follower_count` will fail with HTTP 400 if `--target-date` is more than 30 days ago. Use `--target-date` within the last 30 days when account insights are needed.
 
 ## Running tests
 
