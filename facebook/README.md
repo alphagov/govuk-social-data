@@ -13,7 +13,7 @@ Page node
 ├── Page/posts       (all posts, paginated)
 │   ├── Posts                      → post_id, page_id, message, created_time, post_type, permalink_url
 │   ├── Post insights (scalar)     → post_id, metric, period, value
-│   ├── Post reactions             → post_id, like, love, wow, haha, sorry, anger
+│   ├── Post reactions             → post_id, like, love, wow, haha, sad, angry
 │   ├── Post activity by action    → post_id, action_type, unique_users
 │   └── Post clicks by type        → post_id, click_type, clicks
 └── Page/videos      (all videos, paginated)
@@ -140,6 +140,7 @@ Facebook has deprecated a number of page and post insight metrics across the v25
 | `post_impressions` | Nov 2025 | `post_media_view` |
 | `post_impressions_unique` | Jun 2025 | `post_total_media_view_unique` |
 | `post_engaged_users` | Mar 2024 | `post_engagements` |
+| `post_reactions_by_type_total` | ~2025 | `/reactions` edge with `summary(total_count)` per type |
 | `total_video_view_time` | unknown | N/A — page uses Reels; `total_video_*` metrics do not apply |
 
 **Why fan metrics were removed**: Facebook's API now uses follower-based counts (`page_follows`, `page_daily_follows_unique`) as the primary audience metric; like/fan counts are no longer exposed as insights.
@@ -179,42 +180,51 @@ Facebook has deprecated a number of page and post insight metrics across the v25
 |---|---|
 | `post_media_view` | Total impressions (replaces deprecated `post_impressions`) |
 | `post_total_media_view_unique` | Unique reach (replaces deprecated `post_impressions_unique`) |
-| `post_engagements` | Total engagements (replaces deprecated `post_engaged_users`) |
 | `post_activity_by_action_type_unique` | Unique engaged users by action type (dict: likes, comments, shares, etc.) |
 | `post_clicks` | Total link + photo clicks |
 | `post_clicks_by_type` | Clicks broken down by type (dict) |
-| `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger (dict) |
-## Metrics Collected
 
-### Page Insights (daily, `period=day`)
+> **Note:** `post_reactions_by_type_total` was previously collected here but is deprecated and always returns `{}`. Post reactions are now fetched via the [`/reactions` edge](#reactions) instead.
 
-| Metric | Description |
+### Reactions
+
+Reactions are collected differently for posts vs videos because they come from different APIs with different data shapes.
+
+#### Post reactions — `/reactions` edge (wide format)
+
+Fetched as part of the `/{page_id}/posts` call using per-type field queries with `summary(total_count)`. Each reaction type is requested as a separate aliased field:
+
+```
+reactions.type(LIKE).limit(0).summary(total_count).as(like_reactions),
+reactions.type(LOVE).limit(0).summary(total_count).as(love_reactions),
+...
+```
+
+`limit(0)` suppresses the individual profile list; only the aggregate count is retained. Output is **wide format** — one row per post with a column per reaction type:
+
+| Column | Description |
 |---|---|
-| `page_media_view` | Total media impressions (replaces deprecated `page_impressions`) |
-| `page_total_media_view_unique` | Unique media reach (replaces deprecated `page_impressions_unique`) |
-| `page_post_engagements` | Reactions, comments, shares on posts |
-| `page_daily_follows_unique` | New unique followers |
-| `page_daily_unfollows_unique` | Unfollows |
-| `page_views_total` | Total page views |
-| `page_actions_post_reactions_total` | Total reactions across all post types |
+| `post_id` | Post ID |
+| `like` | Count of Like reactions |
+| `love` | Count of Love reactions |
+| `wow` | Count of Wow reactions |
+| `haha` | Count of Haha reactions |
+| `sad` | Count of Sad reactions (API type: `SAD`) |
+| `angry` | Count of Angry reactions (API type: `ANGRY`) |
 
-### Page Insights (lifetime, `period=lifetime`)
+Reference: [Object Reactions (Graph API v25.0)](https://developers.facebook.com/docs/graph-api/reference/v25.0/object/reactions) · [Post Reactions edge](https://developers.facebook.com/docs/graph-api/reference/post/reactions/)
 
-| Metric | Description |
+#### Video reel reactions — `post_video_likes_by_reaction_type` metric (long format)
+
+Fetched via `/{video_id}/video_insights?metric=post_video_likes_by_reaction_type&period=lifetime`. The API returns a dict of `{REACTION_TYPE: count}` entries (e.g. `{"REACTION_LIKE": 21, "REACTION_HAHA": 2}`). Output is **long format** — one row per reaction type per video, so a video with three reaction types produces three rows:
+
+| Column | Description |
 |---|---|
-| `page_follows` | Cumulative follower count (replaces deprecated `page_fans`) |
+| `video_id` | Video ID |
+| `reaction_type` | Reaction type string as returned by the API (e.g. `REACTION_LIKE`) |
+| `count` | Number of reactions of this type |
 
-### Post Insights (lifetime aggregate per post, via `/{post_id}/insights`)
-
-| Metric | Description |
-|---|---|
-| `post_media_view` | Total impressions (replaces deprecated `post_impressions`) |
-| `post_total_media_view_unique` | Unique reach (replaces deprecated `post_impressions_unique`) |
-| `post_engagements` | Total engagements (replaces deprecated `post_engaged_users`) |
-| `post_activity_by_action_type_unique` | Unique engaged users by action type (dict: likes, comments, shares, etc.) |
-| `post_clicks` | Total link + photo clicks |
-| `post_clicks_by_type` | Clicks broken down by type (dict) |
-| `post_reactions_by_type_total` | Reactions flattened to: like, love, wow, haha, sorry, anger (dict) |
+Reference: [Video Insights metrics](https://developers.facebook.com/docs/graph-api/reference/video/video_insights/#metrics)
 
 ### Video Insights (lifetime aggregate per Reel, via `/{video_id}/video_insights`)
 
