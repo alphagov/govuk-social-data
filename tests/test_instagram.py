@@ -14,6 +14,7 @@ from instagram.schemas import (
     media_insights_to_arrow,
     media_to_arrow,
 )
+from src.bigquery_upload_helpers import enrich, with_ingestion_cols
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -22,8 +23,10 @@ from instagram.schemas import (
 IG_USER_ID = "123456789"
 MEDIA_ID = "111111111111111"
 TS = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+
+# Used by enrich / with_ingestion_cols tests — naive UTC matches Facebook convention
 TARGET_DATE = date(2025, 1, 1)
-INGESTION_TS = datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
+INGESTION_TS = datetime(2025, 1, 2, 0, 0, 0)  # naive UTC
 
 
 @pytest.fixture
@@ -98,28 +101,63 @@ def sample_media_insights() -> list[IGMediaInsightMetric]:
 
 
 # ------------------------------------------------------------------
+# enrich / with_ingestion_cols (shared pipeline helpers)
+# ------------------------------------------------------------------
+
+
+def test_enrich_appends_columns():
+    base = pa.table({"x": [1, 2, 3]})
+    result = enrich(base, TARGET_DATE, INGESTION_TS)
+    assert result["target_date"][0].as_py() == TARGET_DATE
+    assert result["ingestion_timestamp"][0].as_py() == INGESTION_TS
+    assert len(result) == 3
+
+
+def test_enrich_preserves_existing_columns():
+    base = pa.table({"x": [1, 2], "y": ["a", "b"]})
+    result = enrich(base, TARGET_DATE, INGESTION_TS)
+    assert "x" in result.column_names
+    assert "y" in result.column_names
+    assert len(result.column_names) == 4
+
+
+def test_with_ingestion_cols_extends_schema():
+    base = {"x": pa.int64()}
+    result = with_ingestion_cols(base)
+    assert "target_date" in result
+    assert "ingestion_timestamp" in result
+    assert result["target_date"] == pa.date32()
+    assert result["ingestion_timestamp"] == pa.timestamp("s")
+
+
+def test_with_ingestion_cols_preserves_existing_fields():
+    base = {"x": pa.int64(), "y": pa.string()}
+    result = with_ingestion_cols(base)
+    assert result["x"] == pa.int64()
+    assert result["y"] == pa.string()
+
+
+# ------------------------------------------------------------------
 # account_to_arrow
 # ------------------------------------------------------------------
 
 
 def test_account_to_arrow_schema(sample_account):
-    table = account_to_arrow(sample_account, IG_USER_ID, TARGET_DATE, INGESTION_TS)
+    table = account_to_arrow(sample_account, IG_USER_ID)
     assert table.schema == pa.schema([(k, ACCOUNT_SCHEMA[k]) for k in ACCOUNT_SCHEMA])
 
 
 def test_account_to_arrow_values(sample_account):
-    table = account_to_arrow(sample_account, IG_USER_ID, TARGET_DATE, INGESTION_TS)
+    table = account_to_arrow(sample_account, IG_USER_ID)
     assert len(table) == 1
     assert table["ig_user_id"][0].as_py() == IG_USER_ID
     assert table["username"][0].as_py() == "govuk"
     assert table["followers_count"][0].as_py() == 50000
-    assert table["target_date"][0].as_py() == TARGET_DATE
-    assert table["ingestion_ts"][0].as_py() == INGESTION_TS
 
 
 def test_account_to_arrow_nullable_fields():
     account = IGAccount(id=IG_USER_ID, username="govuk", name=None, biography=None)
-    table = account_to_arrow(account, IG_USER_ID, TARGET_DATE, INGESTION_TS)
+    table = account_to_arrow(account, IG_USER_ID)
     assert table["name"][0].as_py() is None
     assert table["biography"][0].as_py() is None
 
@@ -130,27 +168,25 @@ def test_account_to_arrow_nullable_fields():
 
 
 def test_account_insights_to_arrow_schema(sample_account_insights):
-    table = account_insights_to_arrow(IG_USER_ID, sample_account_insights, TARGET_DATE, INGESTION_TS)
+    table = account_insights_to_arrow(IG_USER_ID, sample_account_insights)
     assert table.schema == pa.schema([(k, ACCOUNT_INSIGHTS_SCHEMA[k]) for k in ACCOUNT_INSIGHTS_SCHEMA])
 
 
 def test_account_insights_to_arrow_row_count(sample_account_insights):
-    table = account_insights_to_arrow(IG_USER_ID, sample_account_insights, TARGET_DATE, INGESTION_TS)
+    table = account_insights_to_arrow(IG_USER_ID, sample_account_insights)
     # 2 values for reach + 1 for follower_count = 3 rows
     assert len(table) == 3
 
 
 def test_account_insights_to_arrow_values(sample_account_insights):
-    table = account_insights_to_arrow(IG_USER_ID, sample_account_insights, TARGET_DATE, INGESTION_TS)
+    table = account_insights_to_arrow(IG_USER_ID, sample_account_insights)
     assert table["ig_user_id"][0].as_py() == IG_USER_ID
     assert table["metric"][0].as_py() == "reach"
     assert table["value"][0].as_py() == 1000
-    assert table["target_date"][0].as_py() == TARGET_DATE
-    assert table["ingestion_ts"][0].as_py() == INGESTION_TS
 
 
 def test_account_insights_to_arrow_empty():
-    table = account_insights_to_arrow(IG_USER_ID, [], TARGET_DATE, INGESTION_TS)
+    table = account_insights_to_arrow(IG_USER_ID, [])
     assert len(table) == 0
     assert table.schema == pa.schema([(k, ACCOUNT_INSIGHTS_SCHEMA[k]) for k in ACCOUNT_INSIGHTS_SCHEMA])
 
@@ -161,29 +197,27 @@ def test_account_insights_to_arrow_empty():
 
 
 def test_media_to_arrow_schema(sample_media):
-    table = media_to_arrow(IG_USER_ID, sample_media, TARGET_DATE, INGESTION_TS)
+    table = media_to_arrow(IG_USER_ID, sample_media)
     assert table.schema == pa.schema([(k, MEDIA_SCHEMA[k]) for k in MEDIA_SCHEMA])
 
 
 def test_media_to_arrow_row_count(sample_media):
-    table = media_to_arrow(IG_USER_ID, sample_media, TARGET_DATE, INGESTION_TS)
+    table = media_to_arrow(IG_USER_ID, sample_media)
     assert len(table) == 2
 
 
 def test_media_to_arrow_nullable_fields(sample_media):
-    table = media_to_arrow(IG_USER_ID, sample_media, TARGET_DATE, INGESTION_TS)
+    table = media_to_arrow(IG_USER_ID, sample_media)
     assert table["caption"][1].as_py() is None
     assert table["like_count"][1].as_py() is None
     assert table["permalink"][1].as_py() is None
 
 
 def test_media_to_arrow_values(sample_media):
-    table = media_to_arrow(IG_USER_ID, sample_media, TARGET_DATE, INGESTION_TS)
+    table = media_to_arrow(IG_USER_ID, sample_media)
     assert table["media_id"][0].as_py() == MEDIA_ID
     assert table["media_type"][0].as_py() == "IMAGE"
     assert table["like_count"][0].as_py() == 42
-    assert table["target_date"][0].as_py() == TARGET_DATE
-    assert table["ingestion_ts"][0].as_py() == INGESTION_TS
 
 
 # ------------------------------------------------------------------
@@ -192,29 +226,27 @@ def test_media_to_arrow_values(sample_media):
 
 
 def test_media_insights_to_arrow_schema(sample_media_insights):
-    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights, TARGET_DATE, INGESTION_TS)
+    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights)
     assert table.schema == pa.schema([(k, MEDIA_INSIGHTS_SCHEMA[k]) for k in MEDIA_INSIGHTS_SCHEMA])
 
 
 def test_media_insights_to_arrow_skips_none_values(sample_media_insights):
-    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights, TARGET_DATE, INGESTION_TS)
+    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights)
     # "views" has value=None and should be excluded
     assert "views" not in table["metric"].to_pylist()
 
 
 def test_media_insights_to_arrow_row_count(sample_media_insights):
-    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights, TARGET_DATE, INGESTION_TS)
+    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights)
     # reach + likes = 2 rows (views skipped)
     assert len(table) == 2
 
 
 def test_media_insights_to_arrow_values(sample_media_insights):
-    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights, TARGET_DATE, INGESTION_TS)
+    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights)
     assert table["media_id"][0].as_py() == MEDIA_ID
     assert table["metric"][0].as_py() == "reach"
     assert table["value"][0].as_py() == 500
-    assert table["target_date"][0].as_py() == TARGET_DATE
-    assert table["ingestion_ts"][0].as_py() == INGESTION_TS
 
 
 # ------------------------------------------------------------------
@@ -276,7 +308,7 @@ def test_integration_get_account(_ig):
 def test_integration_get_media(_ig):
     media = _ig["client"].get_media(_ig["ig_user_id"], max_results=5)
     assert len(media) > 0
-    table = media_to_arrow(_ig["ig_user_id"], media, TARGET_DATE, INGESTION_TS)
+    table = media_to_arrow(_ig["ig_user_id"], media)
     assert "media_id" in table.column_names
 
 
@@ -325,7 +357,7 @@ def test_integration_account_insights_arrow(_ig):
     until = date.today() - timedelta(days=1)
     since = until - timedelta(days=6)
     metrics = _ig["client"].get_account_insights(_ig["ig_user_id"], since, until)
-    table = account_insights_to_arrow(_ig["ig_user_id"], metrics, TARGET_DATE, INGESTION_TS)
+    table = account_insights_to_arrow(_ig["ig_user_id"], metrics)
     assert len(table) > 0
     assert "metric" in table.column_names
 
@@ -333,6 +365,6 @@ def test_integration_account_insights_arrow(_ig):
 @pytest.mark.integration
 def test_integration_media_arrow(_ig):
     media = _ig["client"].get_media(_ig["ig_user_id"], max_results=5)
-    table = media_to_arrow(_ig["ig_user_id"], media, TARGET_DATE, INGESTION_TS)
+    table = media_to_arrow(_ig["ig_user_id"], media)
     assert len(table) > 0
     assert "media_id" in table.column_names

@@ -15,12 +15,10 @@ from instagram.schemas import (
     media_insights_to_arrow,
     media_to_arrow,
 )
-from src.bigquery_upload_helpers import load_data_to_partitioned_bq
+from src.bigquery_upload_helpers import upload_partitioned
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
-
-DATASET = "govuk_instagram"
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +27,11 @@ def parse_args() -> argparse.Namespace:
         "--target-date",
         default=(date.today() - timedelta(days=1)).isoformat(),
         help="Target date (YYYY-MM-DD). Defaults to yesterday.",
+    )
+    parser.add_argument(
+        "--dataset",
+        default="govuk_instagram",
+        help="BigQuery dataset name to upload tables into (default: govuk_instagram).",
     )
     parser.add_argument(
         "--media-limit",
@@ -48,8 +51,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     target_date = date.fromisoformat(args.target_date)
-    ingestion_ts = datetime.now(timezone.utc)
-    logger.info("Target date: %s | Ingestion timestamp: %s", target_date, ingestion_ts)
+    ingestion_timestamp = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None)
+    logger.info(
+        "Target date: %s | Ingestion timestamp: %s | Dataset: %s",
+        target_date,
+        ingestion_timestamp,
+        args.dataset,
+    )
 
     client, ig_user_id = build_client()
     logger.info("Using IG user ID: %s", ig_user_id)
@@ -57,9 +65,7 @@ def main() -> None:
     # Account info
     logger.info("Fetching account info...")
     account = client.get_account(ig_user_id)
-    account_table = account_to_arrow(account, ig_user_id, target_date, ingestion_ts)
-    rows = load_data_to_partitioned_bq(account_table, "instagram_account", DATASET, ACCOUNT_SCHEMA, "target_date")
-    logger.info("Loaded %d rows to instagram_account", rows)
+    upload_partitioned(account_to_arrow(account, ig_user_id), "instagram_account", ACCOUNT_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
     # Account insights
     logger.info("Fetching account insights for %s...", target_date)
@@ -67,19 +73,13 @@ def main() -> None:
     total_value_metrics = client.get_account_total_value_insights(
         ig_user_id, target_date, target_date, ACCOUNT_TOTAL_VALUE_METRICS
     )
-    insights_table = account_insights_to_arrow(ig_user_id, day_metrics + total_value_metrics, target_date, ingestion_ts)
-    rows = load_data_to_partitioned_bq(
-        insights_table, "instagram_account_insights", DATASET, ACCOUNT_INSIGHTS_SCHEMA, "target_date"
-    )
-    logger.info("Loaded %d rows to instagram_account_insights", rows)
+    upload_partitioned(account_insights_to_arrow(ig_user_id, day_metrics + total_value_metrics), "instagram_account_insights", ACCOUNT_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
     # Media
     logger.info("Fetching media%s...", f" (limit {args.media_limit})" if args.media_limit else "")
     media = client.get_media(ig_user_id, max_results=args.media_limit)
     logger.info("Found %d media items", len(media))
-    media_table = media_to_arrow(ig_user_id, media, target_date, ingestion_ts)
-    rows = load_data_to_partitioned_bq(media_table, "instagram_media", DATASET, MEDIA_SCHEMA, "target_date")
-    logger.info("Loaded %d rows to instagram_media", rows)
+    upload_partitioned(media_to_arrow(ig_user_id, media), "instagram_media", MEDIA_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
     # Media insights
     if args.run_media_insights:
@@ -89,14 +89,10 @@ def main() -> None:
             logger.info("Media %d/%d: %s", i, len(media), m.id)
             insights = client.get_media_insights(m.id, MEDIA_LIFETIME_METRICS)
             if insights:
-                all_media_insights.append(media_insights_to_arrow(m.id, insights, target_date, ingestion_ts))
+                all_media_insights.append(media_insights_to_arrow(m.id, insights))
 
         if all_media_insights:
-            combined = pa.concat_tables(all_media_insights)
-            rows = load_data_to_partitioned_bq(
-                combined, "instagram_media_insights", DATASET, MEDIA_INSIGHTS_SCHEMA, "target_date"
-            )
-            logger.info("Loaded %d rows to instagram_media_insights", rows)
+            upload_partitioned(pa.concat_tables(all_media_insights), "instagram_media_insights", MEDIA_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
         else:
             logger.info("No media insights to load")
     else:
