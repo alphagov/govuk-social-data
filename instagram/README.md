@@ -54,10 +54,131 @@ Fetched via `GET /{ig_user_id}/insights?metric_type=total_value&period=day`.
 
 Fetched via `GET /{media_id}/insights?period=lifetime`.
 
-Metrics 
-- reach, views, likes, comments,saved,shares, total_interations
+| Metric | Notes |
+|---|---|
+| `reach` | Unique accounts that saw the media. |
+| `views` | Times the media was played or displayed. |
+| `likes` | Like count. **Not valid for STORY media.** |
+| `comments` | Comment count. **Not valid for STORY media.** |
+| `saved` | Save count. **Not valid for STORY media.** |
+| `shares` | Share count. |
+| `total_interactions` | Sum of all engagement metrics. |
 
 `likes`, `comments`, and `saved` are not valid for STORY media. The client swallows HTTP errors per-media-item (`get_media_insights` returns `[]` on failure) so a single story item in the feed does not break the pipeline.
+
+## BigQuery output tables
+
+Tables are written to dataset `govuk_instagram` in project `gds-social-data`. Each table is partitioned by `target_date` (the pipeline run date). All tables include `target_date` (DATE) and `ingestion_timestamp` (TIMESTAMP) columns appended by the upload helper.
+
+### `instagram_account`
+
+Full BQ ID: `gds-social-data.govuk_instagram.instagram_account`
+
+One row per pipeline run — a snapshot of account state at `target_date`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `ig_user_id` | STRING | Instagram Business User ID |
+| `username` | STRING | |
+| `name` | STRING | Display name |
+| `biography` | STRING | |
+| `followers_count` | INT64 | |
+| `follows_count` | INT64 | Accounts this account follows |
+| `media_count` | INT64 | Total media items on the account |
+| `target_date` | DATE | Partition key — pipeline run date |
+| `ingestion_timestamp` | TIMESTAMP | UTC time of pipeline run |
+
+### `instagram_account_insights`
+
+Full BQ ID: `gds-social-data.govuk_instagram.instagram_account_insights`
+
+Long format — one row per metric per day. Join to `instagram_account` on `ig_user_id`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `ig_user_id` | STRING | |
+| `metric` | STRING | `reach`, `follower_count`, `views` |
+| `period` | STRING | Always `"day"` |
+| `end_time` | TIMESTAMP | End of the time window the value covers |
+| `value` | INT64 | |
+| `target_date` | DATE | Partition key |
+| `ingestion_timestamp` | TIMESTAMP | |
+
+### `instagram_media`
+
+Full BQ ID: `gds-social-data.govuk_instagram.instagram_media`
+
+One row per media item (all posts/reels/videos fetched at run time). `target_date` is the run date — use `timestamp` for the publish date. Each daily run overwrites its partition.
+
+| Column | Type | Notes |
+|---|---|---|
+| `ig_user_id` | STRING | |
+| `media_id` | STRING | Unique identifier for the post/reel/video |
+| `caption` | STRING | |
+| `media_type` | STRING | `IMAGE`, `VIDEO`, `CAROUSEL_ALBUM` |
+| `media_product_type` | STRING | `FEED`, `STORY`, `REELS` |
+| `permalink` | STRING | Public URL |
+| `timestamp` | TIMESTAMP | When the media was published |
+| `like_count` | INT64 | At time of ingestion |
+| `comments_count` | INT64 | At time of ingestion |
+| `target_date` | DATE | Partition key |
+| `ingestion_timestamp` | TIMESTAMP | |
+
+### `instagram_media_insights`
+
+Full BQ ID: `gds-social-data.govuk_instagram.instagram_media_insights`
+
+Long format — one row per metric per media item. All values are lifetime cumulative at time of ingestion. Join to `instagram_media` on `media_id`. `likes`, `comments`, and `saved` are absent for STORY media.
+
+| Column | Type | Notes |
+|---|---|---|
+| `media_id` | STRING | |
+| `metric` | STRING | `reach`, `views`, `likes`, `comments`, `saved`, `shares`, `total_interactions` |
+| `period` | STRING | Always `"lifetime"` |
+| `value` | INT64 | Cumulative lifetime value at time of ingestion |
+| `target_date` | DATE | Partition key |
+| `ingestion_timestamp` | TIMESTAMP | |
+
+## Useful queries
+
+### Account insights trend (pivoted)
+
+```sql
+SELECT
+  target_date,
+  MAX(IF(metric = 'reach',          value, NULL)) AS reach,
+  MAX(IF(metric = 'follower_count', value, NULL)) AS follower_count,
+  MAX(IF(metric = 'views',          value, NULL)) AS views
+FROM `gds-social-data.govuk_instagram.instagram_account_insights`
+GROUP BY target_date
+ORDER BY target_date DESC
+```
+
+### Latest media snapshot with lifetime insights (pivoted)
+
+```sql
+SELECT
+  m.media_id,
+  m.media_type,
+  m.media_product_type,
+  m.caption,
+  m.timestamp            AS published_at,
+  m.like_count,
+  m.comments_count,
+  MAX(IF(mi.metric = 'reach',              mi.value, NULL)) AS reach,
+  MAX(IF(mi.metric = 'views',              mi.value, NULL)) AS views,
+  MAX(IF(mi.metric = 'saved',              mi.value, NULL)) AS saved,
+  MAX(IF(mi.metric = 'shares',             mi.value, NULL)) AS shares,
+  MAX(IF(mi.metric = 'total_interactions', mi.value, NULL)) AS total_interactions
+FROM `gds-social-data.govuk_instagram.instagram_media` m
+LEFT JOIN `gds-social-data.govuk_instagram.instagram_media_insights` mi
+  USING (media_id)
+WHERE m.target_date = (
+  SELECT MAX(target_date) FROM `gds-social-data.govuk_instagram.instagram_media`
+)
+GROUP BY 1, 2, 3, 4, 5, 6, 7
+ORDER BY m.timestamp DESC
+```
 
 ## Deprecated metrics (do not add these)
 

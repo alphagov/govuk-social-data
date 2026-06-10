@@ -61,11 +61,6 @@ def parse_args() -> argparse.Namespace:
         help="BigQuery dataset name to upload tables into (default: govuk_facebook).",
     )
     parser.add_argument(
-        "--dataset",
-        default="govuk_facebook",
-        help="BigQuery dataset name to upload tables into (default: govuk_facebook).",
-    )
-    parser.add_argument(
         "--run-post-data",
         action=argparse.BooleanOptionalAction,
         default=True,
