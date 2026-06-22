@@ -1,10 +1,9 @@
 from datetime import datetime, timezone
-
+import logging
 import pyarrow as pa
 import pytest
 
-
-from facebook.api import PAGE_DAY_METRICS, PAGE_LIFETIME_METRICS, POST_METRICS, VIDEO_METRICS
+from facebook.api import PAGE_ID_SECRET, PROJECT_ID, build_client, PAGE_DAY_METRICS, PAGE_LIFETIME_METRICS, POST_METRICS, VIDEO_METRICS
 from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric, Video
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
@@ -20,7 +19,7 @@ from facebook.schemas import (
     posts_to_arrow,
     videos_to_arrow,
 )
-
+from src.authentication import get_gcp_secret
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -264,11 +263,8 @@ def test_videos_to_arrow_nullable_associated_post_id(sample_videos):
 @pytest.fixture(scope="module")
 def _fb():
     """Builds client and fetches shared IDs once for all integration tests in this module."""
-    import logging
 
     logging.disable(logging.CRITICAL)
-    from facebook.api import PAGE_ID_SECRET, PROJECT_ID, build_client
-    from src.authentication import get_gcp_secret
 
     client = build_client()
     page_id = get_gcp_secret(PAGE_ID_SECRET, project_id=PROJECT_ID)
@@ -292,9 +288,6 @@ def _post_with_insights(_fb):
     """Calls get_post_insights() on the most recent post; returns the populated Post."""
     if not _fb["post_id"]:
         pytest.skip("No posts available on page")
-    from datetime import timezone
-
-    from facebook.models import Post
 
     stub = Post(
         post_id=_fb["post_id"],
@@ -335,7 +328,6 @@ def _first_video_with_insights(_fb):
 
 @pytest.mark.integration
 def test_integration_build_client():
-    from facebook.api import build_client
 
     client = build_client()
     assert client is not None
@@ -449,7 +441,6 @@ def test_integration_page_insights_arrow(_fb):
 
 @pytest.mark.integration
 def test_integration_post_insights_arrow(_post_with_insights):
-    from facebook.schemas import post_insights_to_arrow
 
     table = post_insights_to_arrow([_post_with_insights])
     assert "metric" in table.column_names
