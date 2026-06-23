@@ -34,3 +34,6 @@ claude.md
 # coverage 
 coverage.*
 .coverage
+
+# logs 
+*.log
