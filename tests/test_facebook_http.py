@@ -133,16 +133,23 @@ def test_http_page_lifetime_metric(_http, metric):
 
 @pytest.mark.integration
 def test_http_posts_edge(_http):
-    """GET /{page_id}/posts?fields=id,message,created_time,permalink_url,attachments{type}"""
+    """GET /{page_id}/posts with reaction summary fields"""
+    from facebook.api import _REACTION_FIELDS
+
     r = _get(
         f"{_http['page_id']}/posts",
         _http["token"],
-        {"fields": "id,message,created_time,permalink_url,attachments{type}"},
+        {"fields": f"id,message,created_time,permalink_url,attachments{{type}},{_REACTION_FIELDS}", "limit": "1"},
     )
     assert r.status_code == 200, r.text
     data = r.json()
     assert "data" in data
     assert len(data["data"]) > 0, "Expected at least one post"
+    post = data["data"][0]
+    for alias in ("like_reactions", "love_reactions", "wow_reactions", "haha_reactions", "sad_reactions", "angry_reactions"):
+        assert alias in post, f"Expected '{alias}' field in post response"
+        assert "summary" in post[alias], f"Expected 'summary' in '{alias}'"
+        assert "total_count" in post[alias]["summary"], f"Expected 'total_count' in '{alias}.summary'"
 
 
 # ------------------------------------------------------------------
@@ -172,16 +179,17 @@ def test_http_post_metric(_http, metric):
 
 @pytest.mark.integration
 def test_http_videos_edge(_http):
-    """GET /{page_id}/videos?fields=id,title,description,created_time,length"""
+    """GET /{page_id}/videos?fields=id,title,description,created_time,length,post_id"""
     r = _get(
         f"{_http['page_id']}/videos",
         _http["token"],
-        {"fields": "id,title,description,created_time,length"},
+        {"fields": "id,title,description,created_time,length,post_id"},
     )
     assert r.status_code == 200, r.text
     data = r.json()
     assert "data" in data
     assert len(data["data"]) > 0, "Expected at least one video"
+    assert any("post_id" in item for item in data["data"]), "Expected post_id in at least one video"
 
 
 # ------------------------------------------------------------------

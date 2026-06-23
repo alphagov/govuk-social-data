@@ -89,6 +89,7 @@ class FacebookReelInsights(BaseModel):
 class Video(BaseModel):
     video_id: str
     page_id: str
+    associated_post_id: str | None = None
     title: str | None = None
     description: str | None = None
     created_time: datetime
@@ -104,6 +105,7 @@ class Post(BaseModel):
     post_type: str
     permalink_url: str | None = None
     insights: list[PostInsightMetric] = []
+    reactions: dict[str, int] = Field(default_factory=dict)
 
 
 class Page(BaseModel):

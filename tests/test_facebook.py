@@ -1,23 +1,25 @@
 from datetime import datetime, timezone
-
+import logging
 import pyarrow as pa
 import pytest
 
-from facebook.api import PAGE_DAY_METRICS, PAGE_LIFETIME_METRICS, POST_METRICS, VIDEO_METRICS
-from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric
+from facebook.api import PAGE_ID_SECRET, PROJECT_ID, build_client, PAGE_DAY_METRICS, PAGE_LIFETIME_METRICS, POST_METRICS, VIDEO_METRICS
+from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric, Video
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
     PAGE_INSIGHTS_SCHEMA,
     POST_INSIGHTS_SCHEMA,
     POST_REACTIONS_SCHEMA,
     POSTS_SCHEMA,
+    VIDEOS_SCHEMA,
     page_info_to_arrow,
     page_insights_to_arrow,
     post_insights_to_arrow,
     post_reactions_to_arrow,
     posts_to_arrow,
+    videos_to_arrow,
 )
-
+from src.authentication import get_gcp_secret
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -88,12 +90,8 @@ def sample_posts_with_insights(sample_posts) -> list[Post]:
             "insights": [
                 PostInsightMetric(name="post_impressions", period="lifetime", value=300),
                 PostInsightMetric(name="post_engaged_users", period="lifetime", value=50),
-                PostInsightMetric(
-                    name="post_reactions_by_type_total",
-                    period="lifetime",
-                    value={"LIKE": 40, "LOVE": 5, "WOW": 2, "HAHA": 1, "SORRY": 0, "ANGER": 0},
-                ),
-            ]
+            ],
+            "reactions": {"LIKE": 40, "LOVE": 5, "WOW": 2, "HAHA": 1, "SAD": 0, "ANGRY": 0},
         }
     )
     return posts
@@ -173,8 +171,9 @@ def test_post_insights_to_arrow_schema(sample_posts_with_insights):
 
 def test_post_insights_to_arrow_skips_dict_values(sample_posts_with_insights):
     table = post_insights_to_arrow(sample_posts_with_insights)
-    # post_reactions_by_type_total has a dict value — must be excluded from this table
-    assert "post_reactions_by_type_total" not in table["metric"].to_pylist()
+    # dict-valued metrics (e.g. post_clicks_by_type) must be excluded from this table
+    for value in table["value"].to_pylist():
+        assert isinstance(value, int), f"Expected int value in post_insights table, got {type(value)}"
 
 
 def test_post_insights_to_arrow_row_count(sample_posts_with_insights):
@@ -199,13 +198,58 @@ def test_post_reactions_to_arrow_values(sample_posts_with_insights):
     assert table["post_id"][0].as_py() == POST_ID
     assert table["like"][0].as_py() == 40
     assert table["love"][0].as_py() == 5
-    assert table["anger"][0].as_py() == 0
+    assert table["sad"][0].as_py() == 0
+    assert table["angry"][0].as_py() == 0
 
 
 def test_post_reactions_to_arrow_missing_reactions_skipped(sample_posts):
     # Posts with no reaction insight should produce an empty table
     table = post_reactions_to_arrow(sample_posts)
     assert len(table) == 0
+
+
+# ------------------------------------------------------------------
+# videos_to_arrow
+# ------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_videos() -> list[Video]:
+    return [
+        Video(
+            video_id="vid_001",
+            page_id=PAGE_ID,
+            associated_post_id="123456789_vid001",
+            title="Test Video",
+            description="A test video",
+            created_time=TS,
+            length=120.5,
+        ),
+        Video(
+            video_id="vid_002",
+            page_id=PAGE_ID,
+            # associated_post_id intentionally omitted — defaults to None
+            title=None,
+            description=None,
+            created_time=datetime(2024, 6, 2, 10, 0, 0, tzinfo=timezone.utc),
+            length=None,
+        ),
+    ]
+
+
+def test_videos_to_arrow_schema(sample_videos):
+    table = videos_to_arrow(sample_videos)
+    assert table.schema == pa.schema([(k, VIDEOS_SCHEMA[k]) for k in VIDEOS_SCHEMA])
+
+
+def test_videos_to_arrow_associated_post_id(sample_videos):
+    table = videos_to_arrow(sample_videos)
+    assert table["associated_post_id"][0].as_py() == "123456789_vid001"
+
+
+def test_videos_to_arrow_nullable_associated_post_id(sample_videos):
+    table = videos_to_arrow(sample_videos)
+    assert table["associated_post_id"][1].as_py() is None
 
 
 # ------------------------------------------------------------------
@@ -219,11 +263,8 @@ def test_post_reactions_to_arrow_missing_reactions_skipped(sample_posts):
 @pytest.fixture(scope="module")
 def _fb():
     """Builds client and fetches shared IDs once for all integration tests in this module."""
-    import logging
 
     logging.disable(logging.CRITICAL)
-    from facebook.api import PAGE_ID_SECRET, PROJECT_ID, build_client
-    from src.authentication import get_gcp_secret
 
     client = build_client()
     page_id = get_gcp_secret(PAGE_ID_SECRET, project_id=PROJECT_ID)
@@ -247,9 +288,6 @@ def _post_with_insights(_fb):
     """Calls get_post_insights() on the most recent post; returns the populated Post."""
     if not _fb["post_id"]:
         pytest.skip("No posts available on page")
-    from datetime import timezone
-
-    from facebook.models import Post
 
     stub = Post(
         post_id=_fb["post_id"],
@@ -283,7 +321,6 @@ def _first_video_with_insights(_fb):
             return result
     pytest.skip("No video with populated insights found in the most recent 10 videos")
 
-
 # ------------------------------------------------------------------
 # Basic client / node / edge tests
 # ------------------------------------------------------------------
@@ -291,7 +328,6 @@ def _first_video_with_insights(_fb):
 
 @pytest.mark.integration
 def test_integration_build_client():
-    from facebook.api import build_client
 
     client = build_client()
     assert client is not None
@@ -316,8 +352,6 @@ def test_integration_get_posts(_fb):
 def test_integration_get_videos(_fb):
     videos = _fb["client"].get_videos(_fb["page_id"], limit=5, max_results=5)
     assert len(videos) > 0
-    from facebook.schemas import videos_to_arrow
-
     table = videos_to_arrow(videos)
     assert "video_id" in table.column_names
 
@@ -407,7 +441,6 @@ def test_integration_page_insights_arrow(_fb):
 
 @pytest.mark.integration
 def test_integration_post_insights_arrow(_post_with_insights):
-    from facebook.schemas import post_insights_to_arrow
 
     table = post_insights_to_arrow([_post_with_insights])
     assert "metric" in table.column_names

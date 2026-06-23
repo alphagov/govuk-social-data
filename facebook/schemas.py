@@ -3,6 +3,8 @@ import pyarrow as pa
 from facebook.api import VIDEO_SCALAR_METRICS
 from facebook.models import Page, PageInsightMetric, Post, Video
 
+## This file contains the schema objects for the pyarrow upload to bq
+
 PAGE_INFO_SCHEMA: dict[str, pa.DataType] = {
     "page_id": pa.string(),
     "name": pa.string(),
@@ -41,8 +43,8 @@ POST_REACTIONS_SCHEMA: dict[str, pa.DataType] = {
     "love": pa.int64(),
     "wow": pa.int64(),
     "haha": pa.int64(),
-    "sorry": pa.int64(),
-    "anger": pa.int64(),
+    "sad": pa.int64(),
+    "angry": pa.int64(),
 }
 
 # post_activity_by_action_type_unique: {action_type: unique_users} — keys are variable
@@ -62,6 +64,7 @@ POST_CLICKS_BY_TYPE_SCHEMA: dict[str, pa.DataType] = {
 VIDEOS_SCHEMA: dict[str, pa.DataType] = {
     "video_id": pa.string(),
     "page_id": pa.string(),
+    "associated_post_id": pa.string(),
     "title": pa.string(),
     "description": pa.string(),
     "created_time": pa.timestamp("s"),
@@ -152,12 +155,13 @@ def post_insights_to_arrow(posts: list[Post]) -> pa.Table:
             rows["value"].append(insight.value)
     return _cast_table(rows, POST_INSIGHTS_SCHEMA)
 
-
+# toadd 
 def videos_to_arrow(videos: list[Video]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in VIDEOS_SCHEMA}
     for video in videos:
         rows["video_id"].append(video.video_id)
         rows["page_id"].append(video.page_id)
+        rows["associated_post_id"].append(video.associated_post_id)
         rows["title"].append(video.title)
         rows["description"].append(video.description)
         rows["created_time"].append(video.created_time)
@@ -226,20 +230,15 @@ def video_reel_retention_to_arrow(videos: list[Video]) -> pa.Table:
 def post_reactions_to_arrow(posts: list[Post]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in POST_REACTIONS_SCHEMA}
     for post in posts:
-        reactions_insight = next(
-            (i for i in post.insights if i.name == "post_reactions_by_type_total"),
-            None,
-        )
-        if reactions_insight is None or not isinstance(reactions_insight.value, dict):
+        if not post.reactions:
             continue
-        raw: dict = reactions_insight.value
         rows["post_id"].append(post.post_id)
-        rows["like"].append(raw.get("LIKE", 0))
-        rows["love"].append(raw.get("LOVE", 0))
-        rows["wow"].append(raw.get("WOW", 0))
-        rows["haha"].append(raw.get("HAHA", 0))
-        rows["sorry"].append(raw.get("SORRY", 0))
-        rows["anger"].append(raw.get("ANGER", 0))
+        rows["like"].append(post.reactions.get("LIKE", 0))
+        rows["love"].append(post.reactions.get("LOVE", 0))
+        rows["wow"].append(post.reactions.get("WOW", 0))
+        rows["haha"].append(post.reactions.get("HAHA", 0))
+        rows["sad"].append(post.reactions.get("SAD", 0))
+        rows["angry"].append(post.reactions.get("ANGRY", 0))
     return _cast_table(rows, POST_REACTIONS_SCHEMA)
 
 
@@ -248,7 +247,7 @@ def post_activity_to_arrow(posts: list[Post]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in POST_ACTIVITY_SCHEMA}
     for post in posts:
         activity_insight = next(
-            (i for i in post.insights if i.name == "post_activity_by_action_type_unique"),
+            (i for i in post.insights if i.name == "post_activity_by_action_type_unique" and i.period == "lifetime"),
             None,
         )
         if activity_insight is None or not isinstance(activity_insight.value, dict):
@@ -265,7 +264,7 @@ def post_clicks_by_type_to_arrow(posts: list[Post]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in POST_CLICKS_BY_TYPE_SCHEMA}
     for post in posts:
         clicks_insight = next(
-            (i for i in post.insights if i.name == "post_clicks_by_type"),
+            (i for i in post.insights if i.name == "post_clicks_by_type" and i.period == "lifetime"),
             None,
         )
         if clicks_insight is None or not isinstance(clicks_insight.value, dict):

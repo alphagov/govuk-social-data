@@ -33,3 +33,7 @@ claude.md
 
 # instagram
 instagram/*
+
+# coverage 
+coverage.*
+.coverage
