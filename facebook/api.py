@@ -99,45 +99,17 @@ REEL_DICT_METRICS = {}
 # ------------------------------------------------------------------
 
 
-def _refresh_access_token(app_id: str, app_secret: str, long_lived_token: str) -> str:
-    response = requests.get(
-        f"{FB_GRAPH_BASE}/oauth/access_token",
-        params={
-            "grant_type": "fb_exchange_token",
-            "client_id": app_id,
-            "client_secret": app_secret,
-            "fb_exchange_token": long_lived_token,
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
-    access_token = data["access_token"]
-    expires_in = data.get("expires_in")
-    expires_at = None
-    if expires_in:
-        expires_at = datetime.fromtimestamp(datetime.now().timestamp() + expires_in).isoformat()
-    _FACEBOOK_TOKEN_CACHE.save({"access_token": access_token, "expires_at": expires_at})
-    logger.info("Refreshed Facebook access token (expires_in=%s seconds)", expires_in)
-    return access_token
-
-
 def build_client() -> "FacebookClient":
     cached = _FACEBOOK_TOKEN_CACHE.load_valid()
     if cached:
         logger.info("Using cached Facebook access token")
         return FacebookClient(access_token=cached["access_token"])
 
-    app_id = get_gcp_secret(APP_ID_SECRET)
-    app_secret = get_gcp_secret(APP_SECRET_SECRET)
-    long_lived_token = json.loads(get_gcp_secret(TOKEN_JSON_SECRET))["access_token"]
-
     try:
-        access_token = _refresh_access_token(app_id, app_secret, long_lived_token)
+        access_token = json.loads(get_gcp_secret(TOKEN_JSON_SECRET))["access_token"]
     except Exception:
         logger.warning("Token refresh failed, retrying with latest secret version")
-        long_lived_token = json.loads(get_gcp_secret(TOKEN_JSON_SECRET, "latest"))["access_token"]
-        access_token = _refresh_access_token(app_id, app_secret, long_lived_token)
+        access_token = json.loads(get_gcp_secret(TOKEN_JSON_SECRET, "latest"))["access_token"]
 
     return FacebookClient(access_token=access_token)
 
