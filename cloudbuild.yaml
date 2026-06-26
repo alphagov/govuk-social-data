@@ -1,0 +1,20 @@
+substitutions:
+  _COMMIT_SHA: 'unset'
+  _IMAGE_BASE: 'europe-west2-docker.pkg.dev/gds-social-data/gds-social-data-composer-artifacts/pipeline'
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - --platform=linux/amd64
+      - -t
+      - '${_IMAGE_BASE}:${_COMMIT_SHA}'
+      - -t
+      - '${_IMAGE_BASE}:latest'
+      - .
+
+images:
+  - '${_IMAGE_BASE}:${_COMMIT_SHA}'
+  - '${_IMAGE_BASE}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
