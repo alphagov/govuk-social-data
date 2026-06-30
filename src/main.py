@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import Any, Callable
 
-import requests
 import googleapiclient.discovery
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -452,24 +451,19 @@ def get_all_videos_for_date_range(
     """Returns all video IDs for the channel by paginating through the uploads playlist
     using the YouTube Data API v3.
     """
-    token = youtube_data_service._http.credentials.token
     playlist_id = f"UU{CHANNEL_ID[2:]}"
     video_ids = []
-    params = {"part": "contentDetails", "maxResults": 50, "playlistId": playlist_id}
+    page_token = None
 
     while True:
-        response = requests.get(
-            "https://www.googleapis.com/youtube/v3/playlistItems",
-            headers={"Authorization": f"Bearer {token}"},
-            params=params,
-        )
-        response.raise_for_status()
-        data = response.json()
+        kwargs = {"part": "contentDetails", "maxResults": 50, "playlistId": playlist_id}
+        if page_token:
+            kwargs["pageToken"] = page_token
+        data = youtube_data_service.playlistItems().list(**kwargs).execute()
         video_ids.extend(item["contentDetails"]["videoId"] for item in data.get("items", []))
-        next_page_token = data.get("nextPageToken")
-        if not next_page_token:
+        page_token = data.get("nextPageToken")
+        if not page_token:
             break
-        params["pageToken"] = next_page_token
 
     logger.info("Found %d unique videos", len(video_ids))
     return pa.table({"video": video_ids})
