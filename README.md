@@ -1,9 +1,12 @@
-### README
+# Set up 
+1) Ensure you are part of the gcp-data-infrastructure-editors@digital.cabinet-office.gov.uk
 
-## To run unit tests
+2) Sensure you have set you local gcloud config to gds-social-data project. you can set and check with `gcloud config get project` and `gcloud config set project gds-social-data`
 
-python -m pytest tests/test_main.py -v 2>&1
+3) Run `gcloud auth application-default login` to ensure you have local credentials for the scripts to execute locally
 
+4) Set up your local poetry env 
+```
 ## Setting up the environment (Poetry-only approach)
 
 ### Prerequisites
@@ -17,7 +20,8 @@ pipx install poetry
 ```bash
 # 1. Install Python via pyenv and set it locally
 pyenv install 3.14.3
-pyenv local 3.14.3
+pyenv virtualenv 3.14.3 <environment_name>
+pyenv local <environment_name>
 
 # 2. Initialise Poetry in the project (skip if pyproject.toml already exists)
 poetry init
@@ -32,93 +36,41 @@ poetry env use $(pyenv which python)
 poetry install
 ```
 
-### If you already have an existing pyenv virtualenv
-```bash
-# 1. Create the named virtualenv (if not already created)
-pyenv install 3.14.3
-pyenv virtualenv 3.14.3 <your-environment-name>
 
-# 2. Activate it (pyenv reads .python-version automatically)
-pyenv local <your-environment-name>
+5) Check the target datasets exist in project gds-social-data
+ - govuk_facebook
+ - govuk_facebook_dev
+ - govuk_instagram 
+ - govuk_instagram_dev  
+ - govuk_youtube_channel
 
-# 3. Wire it up with Poetry
-poetry env use $(pyenv which python)
-
-# 4. Install dependencies
-poetry install
+6) test manual hooks 
+```
+git hook run facebook-smoke-test
+git hook run instagram-smoke-tes
 ```
 
-### Running the pipeline
+## Pre commit hook smoke tests 
 
-```bash
-poetry run python src/main.py
-```
+This is a short term fix, will move to github actions 
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--run-daily-reports` / `--no-run-daily-reports` | `True` | Run daily analytics reports per video |
-| `--refresh-youtube-ids-and-metadata` / `--no-refresh-youtube-ids-and-metadata` | `False` | Discover new video IDs and fetch metadata from the APIs |
-| `--full-dataset` / `--no-full-dataset` | `True` | Use fulldataset from BigQuery or 6 hardcoded video IDs |
-| `--run-periodic-reports` / `--no-run-periodic-reports` | `False` | Run multi-month demographic, device and engagement analysis |
-| `--start-date` | `2024-01-01` | Start date for queries (YYYY-MM-DD) |
-| `--end-date` | `2025-01-01` | End date for queries (YYYY-MM-DD) |
+facebook-smoke-test runs:
 
-Examples:
-```bash
-# Run daily reports for a all ids (default behaviour)
-poetry run python -m src.main
+poetry run python -m facebook.main --post-limit 10 --video-limit 10 --dataset govuk_facebook_dev
+instagram-smoke-test runs:
 
-# Refresh video IDs and metadata, then run daily reports for all videos
-poetry run python -m src.main --refresh-youtube-ids-and-metadata --full-dataset
+python -m instagram.main --target-date 2026-06-08 --media-limit 10 --dataset govuk_instagram_dev
+Both pass only if exit code is 0 and the log contains "Uploaded.*rows →"
 
-# Run only periodic reports for a custom date range
-poetry run python src.main --no-run-daily-reports --run-periodic-reports --start-date 2025-01-01 --end-date 2026-01-01
+## Authentication with google groups 
 
-# run only a small sample of tests 
- poetry run python -m  src.main  --no-run-periodic-reports --no-refresh-youtube-ids-and-metadata --no-full-dataset  --start-date 2026-02-01 --end-date 2026-02-01
-```
+Permissions are granted gcp-data-infrastructure-editors@digital.cabinet-office.gov.uk
 
-### Useful commands
-```bash
-# Check which environment Poetry is using
-poetry env info --path
+This gives the following permissions on the dataform custom service account custom-dataform-service-accoun@gds-social-data.iam.gserviceaccount.com
+- Service account User on the custom-dataform-service account 
+- Service account ActAs permissions 
 
-# Point Poetry at a specific Python path
-poetry env use /full/path/to/python
-
-# Activate the Poetry shell
-poetry shell
-
-# Run a command inside the environment
-poetry run python your_script.py
-```
-
-
-### Running tests
-```bash
-## running unit tests
-poetry run pytest tests/test_main.py
-
-# running a subset of unit tests
-poetry run pytest tests/test_main.py -m "not integration"
-
-# run tests while only returning the number passed
-poetry run pytest tests/test_main.py -m "not integration" -x -q 2>&1 | tail -30
-
-# to run only a single test by name and category
-poetry run pytest -k "test_run_country_report" -m integration
-```
-
-
-# to get full upload playlist
-https://stackoverflow.com/questions/18953499/youtube-api-to-fetch-all-videos-on-a-channel/27872244#27872244
-
-```bash
-curl "https://www.googleapis.com/youtube/v3/channels?id=UCSNK6abAoM6Kj0SkHOStNLg&part=contentDetails" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>"
-```
-
-```bash
-url "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet%2CcontentDetails&maxResults=50&playlistId=UUSNK6abAoM6Kj0SkHOStNLg" \
-  -H "Authorization: Bearer <access_token>"
-```
+For the project gds-social-data it gives editor, which includes the rquired permissions bellow: 
+| roles/bigquery.dataEditor	          | Enables writing of rows to bigquery when running locally |
+| roles/bigquery.jobUser              |	Required to submit BigQuery load jobs
+| roles/secretmanager.secretAccessor  | Reads the 6 API secrets from Secret Manager |

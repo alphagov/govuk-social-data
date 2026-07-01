@@ -1,5 +1,6 @@
 import io
 import logging
+from datetime import datetime
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -8,6 +9,43 @@ from google.cloud import bigquery
 logger = logging.getLogger(__name__)
 
 PROJECT_ID = "gds-social-data"
+TARGET_DATE_FIELD = "target_date"
+
+
+def enrich(table: pa.Table, target_date: object, ingestion_timestamp: datetime) -> pa.Table:
+    """Append target_date and ingestion_timestamp columns to a PyArrow table."""
+    table = table.append_column(TARGET_DATE_FIELD, pa.array([target_date] * len(table), type=pa.date32()))
+    table = table.append_column(
+        "ingestion_timestamp", pa.array([ingestion_timestamp] * len(table), type=pa.timestamp("s"))
+    )
+    return table
+
+
+def with_ingestion_cols(schema: dict[str, pa.DataType]) -> dict[str, pa.DataType]:
+    """Return schema extended with target_date and ingestion_timestamp fields."""
+    return {**schema, TARGET_DATE_FIELD: pa.date32(), "ingestion_timestamp": pa.timestamp("s")}
+
+
+def upload_partitioned(
+    table: pa.Table,
+    table_name: str,
+    schema: dict[str, pa.DataType],
+    dataset_name: str,
+    target_date: object,
+    ingestion_timestamp: datetime,
+) -> None:
+    """Enrich table with ingestion columns and upload to a partitioned BQ table. Skips empty tables."""
+    if len(table) == 0:
+        logger.info("Skipping upload for %s — table is empty", table_name)
+        return
+    n = load_data_to_partitioned_bq(
+        enrich(table, target_date, ingestion_timestamp),
+        table_name,
+        dataset_name,
+        with_ingestion_cols(schema),
+        time_partition_field=TARGET_DATE_FIELD,
+    )
+    logger.info("Uploaded %d rows → %s.%s", n, dataset_name, table_name)
 
 
 def load_data_to_partitioned_bq(

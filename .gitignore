@@ -31,9 +31,9 @@ htmlcov/
 #Claude
 claude.md
 
-# instagram
-instagram/*
-
 # coverage 
 coverage.*
 .coverage
+
+# logs 
+*.log
