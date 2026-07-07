@@ -173,7 +173,7 @@ trigger-daily-runs:
 		gcloud composer environments run $(COMPOSER_ENV) \
 			--location=$(LOCATION) \
 			--project=$(PROJECT) \
-			-- dags trigger $$dag_id || exit 1; \
+			dags trigger -- $$dag_id || exit 1; \
 	done
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ poll-daily-runs:
 		while true; do \
 			state=$$(gcloud composer environments run $(COMPOSER_ENV) \
 				--location=$(LOCATION) --project=$(PROJECT) \
-				-- dags list-runs -d $$dag_id --output json 2>/dev/null \
+				dags list-runs -- -d $$dag_id --output json 2>/dev/null \
 				| python3 -c "import json,sys; runs=json.load(sys.stdin); print(runs[0]['state'] if runs else 'none')"); \
 			echo "  $$dag_id state=$$state elapsed=$${elapsed}s"; \
 			if [ "$$state" = "success" ]; then break; fi; \
