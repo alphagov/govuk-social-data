@@ -69,7 +69,15 @@ class InstagramClient:
     def _get(self, path: str, params: dict | None = None, retries: int = 3) -> dict:
         url = path if path.startswith("http") else f"{BASE_URL}/{path.lstrip('/')}"
         for attempt in range(retries):
-            response = self._session.get(url, params=params or {}, timeout=30)
+            try:
+                response = self._session.get(url, params=params or {}, timeout=30)
+            except (requests.Timeout, requests.ConnectionError) as e:
+                if attempt == retries - 1:
+                    raise
+                wait = 2**attempt
+                logger.warning("Request error (%s), retrying in %ds", e, wait)
+                time.sleep(wait)
+                continue
             if response.status_code == 429:
                 logger.warning("Rate limited, waiting 60s")
                 time.sleep(60)
@@ -200,7 +208,7 @@ class InstagramClient:
                 f"{media_id}/insights",
                 params={"metric": ",".join(metrics), "period": "lifetime"},
             )
-        except requests.HTTPError as e:
+        except requests.RequestException as e:
             logger.warning("Could not fetch insights for media %s: %s", media_id, e)
             return []
         return [
