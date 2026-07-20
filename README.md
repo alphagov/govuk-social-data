@@ -62,6 +62,32 @@ instagram-smoke-test runs:
 python -m instagram.main --target-date 2026-06-08 --media-limit 10 --dataset govuk_instagram_dev
 Both pass only if exit code is 0 and the log contains "Uploaded.*rows →"
 
+## Corporate proxy / SSL certificate errors
+
+If you're on a machine behind a corporate TLS-inspection proxy (e.g. Zscaler),
+API calls (e.g. to `graph.facebook.com`) will fail with:
+
+```
+ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate
+```
+
+This happens because the proxy re-signs HTTPS traffic with its own root CA,
+which isn't in the certifi bundle Python uses by default, and macOS/Chrome
+already trust that root CA in the system Keychain but Python doesn't check
+there by default.
+
+Fix: install `pip_system_certs` in your poetry venv — it patches Python's
+`ssl` module to validate against the macOS system trust store instead of
+only the certifi bundle:
+
+```bash
+poetry run pip install pip_system_certs
+```
+
+This isn't tracked in `pyproject.toml` since it's a machine-specific fix, not
+a project dependency — reinstall it if it's ever missing after a fresh
+`poetry install`.
+
 ## Authentication with google groups 
 
 Permissions are granted gcp-data-infrastructure-editors@digital.cabinet-office.gov.uk
