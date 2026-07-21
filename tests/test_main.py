@@ -13,9 +13,8 @@ from src.main import (
     USER_ACTIVITY_BQ_SCHEMA,
     USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA,
     _iso8601_duration_to_seconds,
-    _run_country_report,
     _run_report,
-    _with_country_code,
+    _with_country,
     _with_video_id,
     chunk_video_ids,
     generate_date_ranges,
@@ -24,6 +23,7 @@ from src.main import (
     get_playback_details_single_video_config,
     get_playback_locations_single_video_config,
     get_traffic_sources_single_video_config,
+    get_user_activity_by_country_single_video_config,
     get_user_activity_single_video_config,
     get_video_titles,
     get_youtube_analytics_api_v2_service,
@@ -302,21 +302,24 @@ class TestYouTubeAPIIntegration:
         assert result.column_names == expected_columns
 
     @pytest.mark.integration
-    def test_run_country_report(self) -> None:
-        """_run_country_report returns rows with country_code column for GB and US on 2025-01-01."""
+    def test_run_report_user_activity_by_country(self) -> None:
+        """_run_report with the by-country config returns one row per (video, country) with traffic
+        for the small sample on 2025-01-01, without looping over country codes."""
         analytics_service = get_youtube_analytics_api_v2_service()
-        result = _run_country_report(
+        result = _run_report(
             analytics_service,
             self.SMALL_SAMPLE_VIDEO_IDS,
             "2025-01-01",
             "2025-01-01",
-            ["GB", "US"],
+            _with_country(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA),
+            get_user_activity_by_country_single_video_config,
+            "User Activity By Country",
         )
         assert isinstance(result, pa.Table)
-        assert result.num_rows == 3
-        expected_columns = list(_with_country_code(_with_video_id(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)).keys())
+        assert result.num_rows == 4
+        expected_columns = list(_with_video_id(_with_country(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)).keys())
         assert result.column_names == expected_columns
-        assert set(result.column("country_code").to_pylist()).issubset({"GB"})
+        assert set(result.column("country").to_pylist()) == {"IN", "GB"}
 
     @pytest.mark.integration
     def test_data_api_returns_video_title(self) -> None:
