@@ -934,11 +934,6 @@ def main() -> None:
         youtube_analytics_service = get_youtube_analytics_api_v2_service()
         youtube_data_service = get_youtube_data_api_v3_service()
 
-        country_codes: list[str] = []
-        set_of_country_codes = retrieve_data_from_bq(
-            PROJECT_ID, "govuk_youtube_channel_staging", "country_code_to_country_mapping"
-        )
-
         # Step 1: Get video IDs for the channel in the date range using Analytics API v2
         if REFRESH_YOUTUBE_IDS_AND_METADATA and FULL_DATASET:
             # Gated on FULL_DATASET: refreshing and loading to BigQuery is a no-op in sample mode
@@ -970,7 +965,6 @@ def main() -> None:
             youtube_ids_with_metadata_mapping_table = retrieve_data_from_bq(
                 PROJECT_ID, TARGET_DATASET, "video_id_metadata_mapping"
             )
-            country_codes = set_of_country_codes["country_code"].to_pylist()
             TARGET_DATASET = STAGING_DATASSET
         else:
             logger.info(
@@ -994,7 +988,6 @@ def main() -> None:
                 ],
                 names=["video_id"],
             )
-            country_codes = ["GB", "US"]
             TARGET_DATASET = TEST_DATASET
 
         # Daily Reports
