@@ -16,8 +16,10 @@ poetry run python src/main.py
 | `--refresh-youtube-ids-and-metadata` / `--no-refresh-youtube-ids-and-metadata` | `False` | Discover new video IDs and fetch metadata from the APIs |
 | `--full-dataset` / `--no-full-dataset` | `True` | Use fulldataset from BigQuery or 6 hardcoded video IDs |
 | `--run-periodic-reports` / `--no-run-periodic-reports` | `False` | Run multi-month demographic, device and engagement analysis |
-| `--start-date` | `2024-01-01` | Start date for queries (YYYY-MM-DD) |
-| `--end-date` | `2025-01-01` | End date for queries (YYYY-MM-DD) |
+| `--start-date` | `2025-01-08` | Start date for queries (YYYY-MM-DD) |
+| `--end-date` | `2025-01-08` | End date for queries (YYYY-MM-DD) |
+
+**Note:** when `--run-daily-reports` is enabled (the default), `--start-date` and `--end-date` must be the same day — the daily reports, including the per-country breakdown, only support a single day at a time and the pipeline will raise an error otherwise. Only `--run-periodic-reports` (with `--no-run-daily-reports`) accepts a genuine multi-day/multi-month range.
 
 Examples:
 ```bash
@@ -62,7 +64,7 @@ poetry run pytest tests/test_main.py -m "not integration"
 poetry run pytest tests/test_main.py -m "not integration" -x -q 2>&1 | tail -30
 
 # to run only a single test by name and category
-poetry run pytest -k "test_run_country_report" -m integration
+poetry run pytest -k "test_run_report_user_activity_by_country" -m integration
 ```
 
 
