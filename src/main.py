@@ -926,6 +926,12 @@ def main() -> None:
     START_DATE = args.start_date
     END_DATE = args.end_date
 
+    if RUN_DAILY_REPORTS and START_DATE != END_DATE:
+        raise ValueError(
+            "Daily reports (--run-daily-reports) only support a single day - "
+            f"--start-date and --end-date must be equal (got {START_DATE} and {END_DATE})"
+        )
+
     TEST_DATASET = "govuk_youtube_channel_testing"
     STAGING_DATASSET = "govuk_youtube_channel_staging"
     TARGET_DATASET = STAGING_DATASSET
@@ -1013,9 +1019,6 @@ def main() -> None:
                 _with_video_id(USER_ACTIVITY_BQ_SCHEMA),
                 time_partition_field="day",
             )
-
-            if START_DATE != END_DATE:
-                raise ValueError("User activity by country has no 'day' dimension - START_DATE must equal END_DATE")
 
             country_activity_table = _run_report(
                 youtube_analytics_service,
