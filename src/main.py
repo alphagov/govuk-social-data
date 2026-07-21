@@ -1040,7 +1040,7 @@ def main() -> None:
                 country_activity_table,
                 "user_activity_with_country",
                 TARGET_DATASET,
-                _with_country_code(_with_video_id(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)),
+                _with_video_id(_with_country_code(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)),
                 merge_keys=["country_code", "video_id", "day"],
                 time_partition_field="day",
             )
