@@ -867,6 +867,12 @@ def fetch_daily_report_for_all_videos(
             logger.warning("Failed to fetch report for video %s, skipping", id, exc_info=True)
             failed_ids.append(id)
             continue
+        if "day" in full_schema and "day" not in table.column_names:
+            # Some reports (e.g. "User activity by country") have no day/month dimension - the
+            # response is aggregated over [start_date, end_date], so callers must use a single-day
+            # range and we attach that day here as a constant column.
+            day_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            table = table.add_column(0, "day", pa.array([day_date] * len(table), type=pa.date32()))
         video_id_column = pa.array([id] * len(table), type=pa.string())
         table = table.add_column(0, "video_id", video_id_column)
         table = table.cast(schema)
