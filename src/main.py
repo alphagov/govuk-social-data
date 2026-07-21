@@ -187,15 +187,14 @@ def get_engagement_and_content_sharing_config(video_id: str) -> dict[str, Any]:
     return {"dimensions": "sharingService", "metrics": "shares", "filters": f"video=={video_id}"}
 
 
-def get_user_activity_by_country_code_single_video_single_day_config(
-    video_id: str, country_code: str
-) -> dict[str, Any]:
-    """Returns the configuration for retrieving user activity
-    metrics for a single video on a daily basis.
-    This function has been replaced by generic_report_config but
-    is useful for troubleshooting"""
+def get_user_activity_by_country_single_video_config(video_id: str) -> dict[str, Any]:
+    """Returns the configuration for retrieving user activity metrics broken down by country
+    for a single video. Uses the "User activity by country" report (dimensions: country), which
+    has no day/month dimension the response is aggregated over the given start/end date range,
+    so callers must use a single-day range (startDate == endDate) to get a daily breakdown. 
+    This will mean that we can no longer call on multiple days, as we do not have the day dimension """
     return {
-        "dimensions": "day",
+        "dimensions": "country",
         "metrics": (
             "engagedViews,views,redViews,comments,likes,dislikes,"
             "shares,estimatedMinutesWatched,"
@@ -208,7 +207,7 @@ def get_user_activity_by_country_code_single_video_single_day_config(
             "cardImpressions,cardTeaserImpressions,cardClicks,"
             "cardTeaserClicks"
         ),
-        "filters": f"video=={video_id};country=={country_code}",
+        "filters": f"video=={video_id}",
     }
 
 
