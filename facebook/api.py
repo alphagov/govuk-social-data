@@ -69,7 +69,11 @@ _REACTION_FIELDS = (
 VIDEO_SCALAR_METRICS = [
     "post_video_avg_time_watched",
     "post_video_view_time",
-    "post_impressions_unique",
+    # post_impressions_unique rejected by the /video_insights edge as of the Jun 15 2026 Meta
+    # metric deprecation wave, which retires unique-video-view metrics with no replacement.
+    # post_total_media_view_unique (the general Page/Post-level remap for this wave) was tested
+    # and confirmed not viable on this edge either (different error, not a fit). Re-add if Meta
+    # documents a real Reels reach metric.
     "blue_reels_play_count",
     "fb_reels_total_plays",
     "fb_reels_replay_count",
@@ -112,6 +116,21 @@ def build_client() -> "FacebookClient":
         access_token = json.loads(get_gcp_secret(TOKEN_JSON_SECRET, "latest"))["access_token"]
 
     return FacebookClient(access_token=access_token)
+
+
+class InsightMetricError(RuntimeError):
+    """Raised when one or more Graph API insight metrics fail. Carries the metrics that DID
+    succeed (`items`) and, once the caller attaches it, the partially-populated result
+    (`partial_result`) so failures never discard data for the metrics that worked."""
+
+    def __init__(self, path: str, metrics: list[str], causes: dict[str, Exception], items: list[dict]):
+        self.path = path
+        self.metrics = metrics
+        self.causes = causes
+        self.items = items
+        self.partial_result = None  # set by get_video_insights/get_post_insights before re-raising
+        detail = "; ".join(f"{m}: {causes[m]}" for m in metrics)
+        super().__init__(f"{len(metrics)} metric(s) failed for {path} — {detail}")
 
 
 # ------------------------------------------------------------------
@@ -175,12 +194,18 @@ class FacebookClient:
     # Page/insights edge
     # ------------------------------------------------------------------
 
-    def _fetch_insight_items(self, path: str, metric_names: list[str], params: dict) -> list[dict]:
+    def _fetch_insight_items(
+        self, path: str, metric_names: list[str], params: dict, raise_on_failure: bool = False
+    ) -> list[dict]:
         """Fetches insight items, falling back to per-metric requests on a 400.
 
         The Graph API rejects the entire batch if any single metric is unavailable
         for the page (e.g. follower metrics require specific permissions). Retrying
         individually lets us collect what is accessible and skip what is not.
+
+        If raise_on_failure is True, any metric(s) that still fail after the per-metric
+        retry raise InsightMetricError (naming the specific metric and cause) instead of
+        being silently skipped. The metrics that did succeed are still returned/attached.
         """
         try:
             data = self._get(path, {**params, "metric": ",".join(metric_names)})
@@ -192,13 +217,18 @@ class FacebookClient:
 
         items: list[dict] = []
         skipped: list[str] = []
+        causes: dict[str, Exception] = {}
         for metric in metric_names:
             try:
                 data = self._get(path, {**params, "metric": metric})
                 items.extend(data.get("data", []))
-            except requests.HTTPError:
+            except requests.HTTPError as e:
                 skipped.append(metric)
+                causes[metric] = e
         if skipped:
+            if raise_on_failure:
+                logger.error("Metric(s) failed for %s: %s", path, ", ".join(skipped))
+                raise InsightMetricError(path, skipped, causes, items)
             logger.warning("Skipped %d unavailable metric(s): %s", len(skipped), ", ".join(skipped))
         return items
 
@@ -299,31 +329,24 @@ class FacebookClient:
 
     def get_video_insights(self, video: Video) -> Video:
         try:
-            data = self._get(
-                f"{video.video_id}/video_insights",
-                params={"metric": ",".join(VIDEO_METRICS), "period": "lifetime"},
+            items = self._fetch_insight_items(
+                f"{video.video_id}/video_insights", VIDEO_METRICS, {"period": "lifetime"}, raise_on_failure=True
             )
-        except requests.HTTPError as e:
-            logger.warning("Could not fetch insights for video %s: %s", video.video_id, e)
-            return video
-        return video.model_copy(update={"insights": FacebookReelInsights.model_validate(data)})
+        except InsightMetricError as e:
+            e.partial_result = video.model_copy(
+                update={"insights": FacebookReelInsights.model_validate({"data": e.items})}
+            )
+            raise
+        return video.model_copy(update={"insights": FacebookReelInsights.model_validate({"data": items})})
 
     # ------------------------------------------------------------------
     # Post/insights edge
     # ------------------------------------------------------------------
 
-    def get_post_insights(self, post: Post) -> Post:
-        try:
-            data = self._get(
-                f"{post.post_id}/insights",
-                params={"metric": ",".join(POST_METRICS), "period": "lifetime"},
-            )
-        except requests.HTTPError as e:
-            logger.warning("Could not fetch insights for post %s: %s", post.post_id, e)
-            return post
-
+    @staticmethod
+    def _build_post_insights(items: list[dict]) -> list[PostInsightMetric]:
         insights: list[PostInsightMetric] = []
-        for item in data.get("data", []):
+        for item in items:
             if item.get("period") != "lifetime":
                 continue
             values = item.get("values", [])
@@ -335,4 +358,14 @@ class FacebookClient:
                     value=raw_value,
                 )
             )
-        return post.model_copy(update={"insights": insights})
+        return insights
+
+    def get_post_insights(self, post: Post) -> Post:
+        try:
+            items = self._fetch_insight_items(
+                f"{post.post_id}/insights", POST_METRICS, {"period": "lifetime"}, raise_on_failure=True
+            )
+        except InsightMetricError as e:
+            e.partial_result = post.model_copy(update={"insights": self._build_post_insights(e.items)})
+            raise
+        return post.model_copy(update={"insights": self._build_post_insights(items)})
