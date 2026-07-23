@@ -100,12 +100,26 @@ def parse_args() -> argparse.Namespace:
 
 
 def _run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
-    """Runs fetch_one(item) for each item, tolerating per-metric insight failures.
-
+    """
+    Runs fetch_one(item) for each item, tolerating per-metric insight failures.
+    
     On InsightMetricError, keeps the item's partial_result (every metric that DID
     succeed) instead of discarding its insights entirely, logs the specific metric(s)
     that failed, and tallies them for one consolidated summary line at the end instead
     of one generic warning per item.
+
+        PARAMETERS
+
+            items: items can be either a list of post ids or video_ids.
+            fetch_one: a client object that fetches insights for the ids passed
+            get_id: gets a string ID 
+            label: video or post id
+
+
+        RETURNS  
+            A list of 
+
+
     """
     results = []
     failed_metrics: dict[str, int] = {}

@@ -70,10 +70,10 @@ VIDEO_SCALAR_METRICS = [
     "post_video_avg_time_watched",
     "post_video_view_time",
     # post_impressions_unique rejected by the /video_insights edge as of the Jun 15 2026 Meta
-    # metric deprecation wave, which retires unique-video-view metrics with no replacement.
-    # post_total_media_view_unique (the general Page/Post-level remap for this wave) was tested
-    # and confirmed not viable on this edge either (different error, not a fit). Re-add if Meta
-    # documents a real Reels reach metric.
+    # metric deprecation wave, which retires unique-video-view metrics with no direct replacement.
+    # post_total_media_view_unique (the general Page/Post-level remap for this wave) is the equivalent
+    # for meta products going forward. Re-add if Meta
+    # documents a specific Reels reach metric.
     "blue_reels_play_count",
     "fb_reels_total_plays",
     "fb_reels_replay_count",
