@@ -6,9 +6,7 @@ import json
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from functools import partial
 from typing import Any, Callable
 
 import googleapiclient.discovery
@@ -188,15 +186,14 @@ def get_engagement_and_content_sharing_config(video_id: str) -> dict[str, Any]:
     return {"dimensions": "sharingService", "metrics": "shares", "filters": f"video=={video_id}"}
 
 
-def get_user_activity_by_country_code_single_video_single_day_config(
-    video_id: str, country_code: str
-) -> dict[str, Any]:
-    """Returns the configuration for retrieving user activity
-    metrics for a single video on a daily basis.
-    This function has been replaced by generic_report_config but
-    is useful for troubleshooting"""
+def get_user_activity_by_country_single_video_config(video_id: str) -> dict[str, Any]:
+    """Returns the configuration for retrieving user activity metrics broken down by country
+    for a single video. Uses the "User activity by country" report (dimensions: country), which
+    has no day/month dimension the response is aggregated over the given start/end date range,
+    so callers must use a single-day range (startDate == endDate) to get a daily breakdown. 
+    This will mean that we can no longer call on multiple days, as we do not have the day dimension """
     return {
-        "dimensions": "day",
+        "dimensions": "country",
         "metrics": (
             "engagedViews,views,redViews,comments,likes,dislikes,"
             "shares,estimatedMinutesWatched,"
@@ -209,7 +206,7 @@ def get_user_activity_by_country_code_single_video_single_day_config(
             "cardImpressions,cardTeaserImpressions,cardClicks,"
             "cardTeaserClicks"
         ),
-        "filters": f"video=={video_id};country=={country_code}",
+        "filters": f"video=={video_id}",
     }
 
 
@@ -671,6 +668,12 @@ def _with_country_code(schema: dict[str, pa.DataType]) -> dict[str, pa.DataType]
     return {"country_code": pa.string(), **schema}
 
 
+def _with_country(schema: dict[str, pa.DataType]) -> dict[str, pa.DataType]:
+    """Prepends a country field to a schema dict, matching the API response's "country" dimension
+    column name (renamed to country_code before upload to match the BigQuery table)."""
+    return {"country": pa.string(), **schema}
+
+
 def _with_month(schema: dict[str, pa.DataType]) -> dict[str, pa.DataType]:
     """Prepends a month field to a schema dict."""
     return {"month": pa.date32(), **schema}
@@ -748,71 +751,6 @@ def _run_report(
     return table
 
 
-def _run_country_report(
-    video_ids: list[str],
-    start_date: str,
-    end_date: str,
-    country_codes: list[str],
-    dataset_name: str,
-    table_name: str = "user_activity_with_country",
-    num_workers: int = 4,
-) -> int:
-    """Fetches user activity reports per country code and loads each to BigQuery via MERGE.
-    Splits country_codes across multiple threads for parallel processing.
-    Returns the total number of rows loaded."""
-
-    def _process_country_chunk(chunk: list[str]) -> int:
-        youtube_service = get_youtube_analytics_api_v2_service()
-        full_country_schema = _with_country_code(_with_video_id(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA))
-        country_schema = pa.schema([(k, v) for k, v in full_country_schema.items()])
-        chunk_rows = 0
-        for country_code in chunk:
-            config_fn = partial(
-                get_user_activity_by_country_code_single_video_single_day_config, country_code=country_code
-            )
-            table = _run_report(
-                youtube_service,
-                video_ids,
-                start_date,
-                end_date,
-                USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA,
-                config_fn,
-                f"User Activity - {country_code}",
-            )
-            if len(table) > 0:
-                country_code_column = pa.array([country_code] * len(table), type=pa.string())
-                table = table.add_column(0, "country_code", country_code_column)
-                table = table.cast(country_schema)
-                rows_loaded = load_data_to_partitioned_bq_merge(
-                    table,
-                    table_name,
-                    dataset_name,
-                    full_country_schema,
-                    merge_keys=["country_code", "video_id", "day"],
-                    time_partition_field="day",
-                )
-                chunk_rows += rows_loaded
-        return chunk_rows
-
-    country_code_chunks = [country_codes[i::num_workers] for i in range(num_workers)]
-
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = {
-            executor.submit(_process_country_chunk, chunk): i for i, chunk in enumerate(country_code_chunks) if chunk
-        }
-        total_rows = 0
-        for future in as_completed(futures):
-            worker_id = futures[future]
-            try:
-                rows = future.result()
-                total_rows += rows
-                logger.info("Worker %d finished, loaded %d rows", worker_id, rows)
-            except Exception:
-                logger.error("Worker %d failed", worker_id, exc_info=True)
-
-    return total_rows
-
-
 def fetch_daily_report_for_all_videos(
     youtube_analytics_service: Resource,
     video_ids: list[str],
@@ -869,9 +807,17 @@ def fetch_daily_report_for_all_videos(
             logger.warning("Failed to fetch report for video %s, skipping", id, exc_info=True)
             failed_ids.append(id)
             continue
+        if "day" in full_schema and "day" not in table.column_names:
+            # Some reports (e.g. "User activity by country") have no day/month dimension - the
+            # response is aggregated over [start_date, end_date], so callers must use a single-day
+            # range and we attach that day here as a constant column.
+            day_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            table = table.add_column(0, "day", pa.array([day_date] * len(table), type=pa.date32()))
         video_id_column = pa.array([id] * len(table), type=pa.string())
         table = table.add_column(0, "video_id", video_id_column)
-        table = table.cast(schema)
+        # Reorder to match schema field order before casting - Table.cast() requires an exact
+        # positional match, and column order otherwise depends on the order columns were added above.
+        table = table.select(schema.names).cast(schema)
         tables.append(table)
         # time.sleep(0.2)
     if failed_ids:
@@ -980,6 +926,12 @@ def main() -> None:
     START_DATE = args.start_date
     END_DATE = args.end_date
 
+    if RUN_DAILY_REPORTS and START_DATE != END_DATE:
+        raise ValueError(
+            "Daily reports (--run-daily-reports) only support a single day - "
+            f"--start-date and --end-date must be equal (got {START_DATE} and {END_DATE})"
+        )
+
     TEST_DATASET = "govuk_youtube_channel_testing"
     STAGING_DATASSET = "govuk_youtube_channel_staging"
     TARGET_DATASET = STAGING_DATASSET
@@ -987,11 +939,6 @@ def main() -> None:
     try:
         youtube_analytics_service = get_youtube_analytics_api_v2_service()
         youtube_data_service = get_youtube_data_api_v3_service()
-
-        country_codes: list[str] = []
-        set_of_country_codes = retrieve_data_from_bq(
-            PROJECT_ID, "govuk_youtube_channel_staging", "country_code_to_country_mapping"
-        )
 
         # Step 1: Get video IDs for the channel in the date range using Analytics API v2
         if REFRESH_YOUTUBE_IDS_AND_METADATA and FULL_DATASET:
@@ -1024,7 +971,6 @@ def main() -> None:
             youtube_ids_with_metadata_mapping_table = retrieve_data_from_bq(
                 PROJECT_ID, TARGET_DATASET, "video_id_metadata_mapping"
             )
-            country_codes = set_of_country_codes["country_code"].to_pylist()
             TARGET_DATASET = STAGING_DATASSET
         else:
             logger.info(
@@ -1048,7 +994,6 @@ def main() -> None:
                 ],
                 names=["video_id"],
             )
-            country_codes = ["GB", "US"]
             TARGET_DATASET = TEST_DATASET
 
         # Daily Reports
@@ -1075,12 +1020,25 @@ def main() -> None:
                 time_partition_field="day",
             )
 
-            _run_country_report(
+            country_activity_table = _run_report(
+                youtube_analytics_service,
                 video_ids,
                 START_DATE,
                 END_DATE,
-                country_codes,
+                _with_country(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA),
+                get_user_activity_by_country_single_video_config,
+                "User Activity By Country",
+            )
+            country_activity_table = country_activity_table.rename_columns(
+                ["country_code" if name == "country" else name for name in country_activity_table.column_names]
+            )
+            load_data_to_partitioned_bq_merge(
+                country_activity_table,
+                "user_activity_with_country",
                 TARGET_DATASET,
+                _with_video_id(_with_country_code(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)),
+                merge_keys=["country_code", "video_id", "day"],
+                time_partition_field="day",
             )
 
             playback_location_table = _run_report(
