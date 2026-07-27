@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 
-_IMAGE = "europe-west2-docker.pkg.dev/gds-social-data/gds-social-data-composer-artifacts/pipeline:latest"
+from common.config import IMAGE
 
 
 def _on_failure(context: dict) -> None:
@@ -39,14 +39,14 @@ with DAG(
         task_id="run_youtube_pipeline",
         name="youtube-ingestion",
         namespace="default",
-        image=_IMAGE,
+        image=IMAGE,
         arguments=[
             "-m",
             "src.main",
             "--start-date",
-            "{{ params.start_date or macros.ds_add(ds, -2) }}",
+            "{{ params.start_date or macros.ds_add(ds, -1) }}",
             "--end-date",
-            "{{ params.end_date or macros.ds_add(ds, -2) }}",
+            "{{ params.end_date or macros.ds_add(ds, -1) }}",
         ],
         get_logs=True,
         is_delete_operator_pod=True,

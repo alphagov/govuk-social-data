@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 
-_IMAGE = "europe-west2-docker.pkg.dev/gds-social-data/gds-social-data-composer-artifacts/pipeline:latest"
+from common.config import IMAGE
 
 
 def _on_failure(context: dict) -> None:
@@ -39,7 +39,7 @@ with DAG(
         task_id="run_facebook_pipeline",
         name="facebook-ingestion",
         namespace="default",
-        image=_IMAGE,
+        image=IMAGE,
         arguments=[
             "-m",
             "facebook.main",
