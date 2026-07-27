@@ -88,7 +88,7 @@ create-composer-sa:
 build:
 	gcloud builds submit \
 		--config=cloudbuild.yaml \
-		--substitutions="_COMMIT_SHA=$$(git rev-parse HEAD)" \
+		--substitutions="_COMMIT_SHA=$$(git rev-parse HEAD),_IMAGE_BASE=$(LOCATION)-docker.pkg.dev/$(PROJECT)/$(AR_REPO)/pipeline" \
 		--project=$(PROJECT) \
 		.
 
@@ -155,11 +155,13 @@ wait-composer-env-ready:
 # ---------------------------------------------------------------------------
 
 deploy-dags:
-	gcloud composer environments storage dags import \
-		--environment=$(COMPOSER_ENV) \
-		--location=$(LOCATION) \
-		--project=$(PROJECT) \
-		--source=dags/
+	for item in dags/*; do \
+		gcloud composer environments storage dags import \
+			--environment=$(COMPOSER_ENV) \
+			--location=$(LOCATION) \
+			--project=$(PROJECT) \
+			--source=$$item || exit 1; \
+	done
 
 # ---------------------------------------------------------------------------
 # Daily [03:00]: facebook_ingestion, instagram_ingestion and youtube_ingestion
