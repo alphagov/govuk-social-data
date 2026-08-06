@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pyarrow as pa
 import requests
 
-from facebook.api import PAGE_ID_SECRET, PROJECT_ID, InsightMetricError, build_client
+from facebook.api import PAGE_ID_SECRET, PROJECT_ID, InsightMetricError, PaginationError, build_client
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
     PAGE_INSIGHTS_SCHEMA,
@@ -110,14 +110,16 @@ def _run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
 
         PARAMETERS
 
-            items: items can be either a list of post ids or video_ids.
-            fetch_one: a client object that fetches insights for the ids passed
+            items: items can be either Post or Video objects.
+            fetch_one: is a callable from the client boject, that fetches insights for the ids passed, such as
+                client.get_video_insight, client.get_post_insight
             get_id: gets a string ID 
             label: video or post id
 
 
         RETURNS  
-            A list of 
+            A list of insights, specified by the function passed to fetch_one. Can be partial results if an
+                insight failes for certain Post or Video objects. 
 
 
     """
@@ -162,8 +164,18 @@ def main() -> None:
 
     # Page info
     logger.info("Fetching page info...")
-    page = client.get_page(page_id)
-    upload_partitioned(page_info_to_arrow(page), "facebook_page_info", PAGE_INFO_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    try:
+        page = client.get_page(page_id)
+    except requests.exceptions.RequestException as e: 
+        logger.error("Failed to fetch page info: %s", e)
+        page = None
+
+
+        
+    if page is not None:
+        upload_partitioned(page_info_to_arrow(page), "facebook_page_info", PAGE_INFO_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    else:
+        logger.warning("Skipping facebook_page_info upload due to fetch failure")
 
     # Page insights
     logger.info("Fetching page insights for %s...", args.start_date)
@@ -180,7 +192,11 @@ def main() -> None:
     # Posts
     if args.run_post_data:
         logger.info("Fetching posts%s...", f" (limit {args.post_limit})" if args.post_limit else "")
-        posts = client.get_posts(page_id, limit=args.post_limit, max_results=args.post_limit)
+        try:
+            posts = client.get_posts(page_id, limit=args.post_limit, max_results=args.post_limit)
+        except PaginationError as e:
+            logger.error("Post pagination failed: %s", e)
+            posts = e.partial_result
         logger.info("Found %d posts", len(posts))
         upload_partitioned(posts_to_arrow(posts), "facebook_posts", POSTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
@@ -202,7 +218,11 @@ def main() -> None:
     # Videos
     if args.run_video_data:
         logger.info("Fetching videos%s...", f" (limit {args.video_limit})" if args.video_limit else "")
-        videos = client.get_videos(page_id, limit=args.video_limit, max_results=args.video_limit)
+        try:
+            videos = client.get_videos(page_id, limit=args.video_limit, max_results=args.video_limit)
+        except PaginationError as e:
+            logger.error("Video pagination failed: %s", e)
+            videos = e.partial_result
         logger.info("Found %d videos", len(videos))
         upload_partitioned(videos_to_arrow(videos), "facebook_videos", VIDEOS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
