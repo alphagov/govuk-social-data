@@ -6,9 +6,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 import pyarrow as pa
+import requests
 
-
-from facebook.api import PAGE_ID_SECRET, PROJECT_ID, build_client
+from facebook.api import PAGE_ID_SECRET, PROJECT_ID, InsightMetricError, PaginationError, build_client
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
     PAGE_INSIGHTS_SCHEMA,
@@ -99,6 +99,55 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
+    """
+    Runs fetch_one(item) for each item, tolerating per-metric insight failures.
+    
+    On InsightMetricError, keeps the item's partial_result (every metric that DID
+    succeed) instead of discarding its insights entirely, logs the specific metric(s)
+    that failed, and tallies them for one consolidated summary line at the end instead
+    of one generic warning per item.
+
+        PARAMETERS
+
+            items: items can be either Post or Video objects.
+            fetch_one: is a callable from the client boject, that fetches insights for the ids passed, such as
+                client.get_video_insight, client.get_post_insight
+            get_id: gets a string ID 
+            label: video or post id
+
+
+        RETURNS  
+            A list of insights, specified by the function passed to fetch_one. Can be partial results if an
+                insight failes for certain Post or Video objects. 
+
+
+    """
+    results = []
+    failed_metrics: dict[str, int] = {}
+    for i, item in enumerate(items, start=1):
+        item_id = get_id(item)
+        logger.info("%s %d/%d: %s", label, i, len(items), item_id)
+        try:
+            results.append(fetch_one(item))
+        except InsightMetricError as e:
+            logger.error("%s %s: %s", label, item_id, e)
+            results.append(e.partial_result)
+            for m in e.metrics:
+                failed_metrics[m] = failed_metrics.get(m, 0) + 1
+        except requests.HTTPError as e:
+            logger.error("%s %s: %s", label, item_id, e)
+            results.append(item)
+    if failed_metrics:
+        logger.warning(
+            "%s insight metric failures across %d item(s): %s",
+            label,
+            len(items),
+            ", ".join(f"{m} ({c})" for m, c in sorted(failed_metrics.items(), key=lambda kv: -kv[1])),
+        )
+    return results
+
+
 def main() -> None:
     args = parse_args()
     target_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
@@ -115,8 +164,18 @@ def main() -> None:
 
     # Page info
     logger.info("Fetching page info...")
-    page = client.get_page(page_id)
-    upload_partitioned(page_info_to_arrow(page), "facebook_page_info", PAGE_INFO_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    try:
+        page = client.get_page(page_id)
+    except requests.exceptions.RequestException as e: 
+        logger.error("Failed to fetch page info: %s", e)
+        page = None
+
+
+        
+    if page is not None:
+        upload_partitioned(page_info_to_arrow(page), "facebook_page_info", PAGE_INFO_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    else:
+        logger.warning("Skipping facebook_page_info upload due to fetch failure")
 
     # Page insights
     logger.info("Fetching page insights for %s...", args.start_date)
@@ -133,16 +192,19 @@ def main() -> None:
     # Posts
     if args.run_post_data:
         logger.info("Fetching posts%s...", f" (limit {args.post_limit})" if args.post_limit else "")
-        posts = client.get_posts(page_id, limit=args.post_limit, max_results=args.post_limit)
+        try:
+            posts = client.get_posts(page_id, limit=args.post_limit, max_results=args.post_limit)
+        except PaginationError as e:
+            logger.error("Post pagination failed: %s", e)
+            posts = e.partial_result
         logger.info("Found %d posts", len(posts))
         upload_partitioned(posts_to_arrow(posts), "facebook_posts", POSTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
         if args.run_post_insights:
             logger.info("Fetching insights for %d posts...", len(posts))
-            posts_with_insights = []
-            for i, post in enumerate(posts, start=1):
-                logger.info("Post %d/%d: %s", i, len(posts), post.post_id)
-                posts_with_insights.append(client.get_post_insights(post))
+            posts_with_insights = _run_insight_fetch(
+                posts, client.get_post_insights, lambda p: p.post_id, "Post"
+            )
 
             upload_partitioned(post_insights_to_arrow(posts_with_insights), "facebook_post_insights", POST_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
             upload_partitioned(post_reactions_to_arrow(posts_with_insights), "facebook_post_reactions", POST_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
@@ -156,16 +218,19 @@ def main() -> None:
     # Videos
     if args.run_video_data:
         logger.info("Fetching videos%s...", f" (limit {args.video_limit})" if args.video_limit else "")
-        videos = client.get_videos(page_id, limit=args.video_limit, max_results=args.video_limit)
+        try:
+            videos = client.get_videos(page_id, limit=args.video_limit, max_results=args.video_limit)
+        except PaginationError as e:
+            logger.error("Video pagination failed: %s", e)
+            videos = e.partial_result
         logger.info("Found %d videos", len(videos))
         upload_partitioned(videos_to_arrow(videos), "facebook_videos", VIDEOS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
 
         if args.run_video_insights:
             logger.info("Fetching insights for %d videos...", len(videos))
-            videos_with_insights = []
-            for i, video in enumerate(videos, start=1):
-                logger.info("Video %d/%d: %s", i, len(videos), video.video_id)
-                videos_with_insights.append(client.get_video_insights(video))
+            videos_with_insights = _run_insight_fetch(
+                videos, client.get_video_insights, lambda v: v.video_id, "Video"
+            )
 
             upload_partitioned(video_insights_to_arrow(videos_with_insights), "facebook_video_insights", VIDEO_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
             upload_partitioned(video_reel_reactions_to_arrow(videos_with_insights), "facebook_video_reel_reactions", VIDEO_REEL_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
@@ -175,29 +240,6 @@ def main() -> None:
             logger.info("Skipping video insights (--no-run-video-insights)")
     else:
         logger.info("Skipping all video data (--no-run-video-data)")
-
-    if not args.run_video_insights:
-        logger.info("Skipping video insights (--no-run-video-insights)")
-        return
-
-    # Videos
-    logger.info("Fetching videos...")
-    videos = client.get_videos(page_id)
-    logger.info("Found %d videos", len(videos))
-    videos_table = videos_to_arrow(videos)
-    print(f"\n=== Videos ({len(videos_table)} rows) ===")
-    print(videos_table.to_pydict())
-
-    # Video insights
-    logger.info("Fetching insights for %d videos...", len(videos))
-    videos_with_insights = []
-    for i, video in enumerate(videos, start=1):
-        logger.info("Video %d/%d: %s", i, len(videos), video.video_id)
-        videos_with_insights.append(client.get_video_insights(video))
-
-    video_insights_table = video_insights_to_arrow(videos_with_insights)
-    print(f"\n=== Video Insights ({len(video_insights_table)} rows) ===")
-    print(video_insights_table.to_pydict())
 
 
 if __name__ == "__main__":

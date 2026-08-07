@@ -1,9 +1,23 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 import logging
 import pyarrow as pa
 import pytest
+import requests
 
-from facebook.api import PAGE_ID_SECRET, PROJECT_ID, build_client, PAGE_DAY_METRICS, PAGE_LIFETIME_METRICS, POST_METRICS, VIDEO_METRICS
+from facebook.api import (
+    PAGE_ID_SECRET,
+    PROJECT_ID,
+    FacebookClient,
+    InsightMetricError,
+    build_client,
+    PAGE_DAY_METRICS,
+    PAGE_LIFETIME_METRICS,
+    POST_METRICS,
+    VIDEO_DICT_METRICS,
+    VIDEO_METRICS,
+    VIDEO_SCALAR_METRICS,
+)
 from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric, Video
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
@@ -250,6 +264,95 @@ def test_videos_to_arrow_associated_post_id(sample_videos):
 def test_videos_to_arrow_nullable_associated_post_id(sample_videos):
     table = videos_to_arrow(sample_videos)
     assert table["associated_post_id"][1].as_py() is None
+
+
+# ------------------------------------------------------------------
+# _fetch_insight_items / get_video_insights / get_post_insights — metric failure handling
+# ------------------------------------------------------------------
+
+
+def _http_error(status_code: int = 400) -> requests.HTTPError:
+    err = requests.HTTPError(f"{status_code} error")
+    err.response = SimpleNamespace(status_code=status_code)
+    return err
+
+
+def _fake_metric_value(metric: str):
+    return {"SOME_KEY": 1} if metric in VIDEO_DICT_METRICS else 42
+
+
+def _make_fake_get(metric_names: list[str], failing_metric: str):
+    """Simulates the Graph API: the joined batch request 400s (as it does whenever any
+    one metric is bad), then each per-metric request succeeds except `failing_metric`."""
+    joined = ",".join(metric_names)
+
+    def fake_get(path, params=None, retries=3):
+        metric = params["metric"]
+        if metric in (joined, failing_metric):
+            raise _http_error(400)
+        return {
+            "data": [{"name": metric, "period": "lifetime", "values": [{"value": _fake_metric_value(metric)}]}]
+        }
+
+    return fake_get
+
+
+def test_fetch_insight_items_skips_silently_by_default(monkeypatch):
+    client = FacebookClient(access_token="test-token")
+    monkeypatch.setattr(client, "_get", _make_fake_get(POST_METRICS, "post_clicks"))
+
+    items = client._fetch_insight_items(f"{POST_ID}/insights", POST_METRICS, {"period": "lifetime"})
+
+    names = {item["name"] for item in items}
+    assert names == set(POST_METRICS) - {"post_clicks"}
+
+
+def test_fetch_insight_items_raises_with_specific_metric(monkeypatch):
+    client = FacebookClient(access_token="test-token")
+    monkeypatch.setattr(client, "_get", _make_fake_get(POST_METRICS, "post_clicks"))
+
+    with pytest.raises(InsightMetricError) as exc_info:
+        client._fetch_insight_items(
+            f"{POST_ID}/insights", POST_METRICS, {"period": "lifetime"}, raise_on_failure=True
+        )
+
+    err = exc_info.value
+    assert err.metrics == ["post_clicks"]
+    assert {item["name"] for item in err.items} == set(POST_METRICS) - {"post_clicks"}
+
+
+def test_get_video_insights_partial_result_on_metric_failure(monkeypatch):
+    client = FacebookClient(access_token="test-token")
+    video = Video(video_id="vid_001", page_id=PAGE_ID, created_time=TS)
+    failing_metric = "post_video_followers"
+    monkeypatch.setattr(client, "_get", _make_fake_get(VIDEO_METRICS, failing_metric))
+
+    with pytest.raises(InsightMetricError) as exc_info:
+        client.get_video_insights(video)
+
+    err = exc_info.value
+    assert err.metrics == [failing_metric]
+    partial = err.partial_result
+    assert getattr(partial.insights, failing_metric) is None
+    for metric in VIDEO_SCALAR_METRICS:
+        if metric != failing_metric:
+            assert getattr(partial.insights, metric) == 42
+
+
+def test_get_post_insights_partial_result_on_metric_failure(monkeypatch):
+    client = FacebookClient(access_token="test-token")
+    post = Post(post_id=POST_ID, page_id=PAGE_ID, created_time=TS, post_type="status")
+    failing_metric = "post_clicks"
+    monkeypatch.setattr(client, "_get", _make_fake_get(POST_METRICS, failing_metric))
+
+    with pytest.raises(InsightMetricError) as exc_info:
+        client.get_post_insights(post)
+
+    err = exc_info.value
+    assert err.metrics == [failing_metric]
+    names = {i.name for i in err.partial_result.insights}
+    assert failing_metric not in names
+    assert names == set(POST_METRICS) - {failing_metric}
 
 
 # ------------------------------------------------------------------
