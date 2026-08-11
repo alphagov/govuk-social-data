@@ -1,3 +1,8 @@
+"""
+Models contains the pydantic containers for handling the data as it comes in from the Facebook graph API.
+Several of the models use the before model_validator to flatten the data from the Graph API into a flat dictionary 
+that can be used to populate the models. The models are also used to validate the data before it is uploaded to BigQuery.
+"""
 import logging
 from datetime import datetime
 from typing import Any
