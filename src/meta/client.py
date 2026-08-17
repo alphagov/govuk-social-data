@@ -14,7 +14,7 @@ differing only in base URL, metric constants and model builders.
 Subclasses set BASE_URL and nothing else; none of these methods is intended to be overridden.
 
 This module came from facebook/api.py, which was the only client with a worked-out failure
-story. It is behaviour-identical for Facebook, established two ways: _fetch_insight_items is
+process. It is behaviour-identical for Facebook, established two ways: _fetch_insight_items is
 unchanged from its source, while _get and _paginate were edited and their equivalence rests on
 case analysis instead —
 
@@ -180,7 +180,15 @@ class GraphClient:
                 if raise_on_failure:
                     raise PaginationError(path, params, causes, results)
                 break
-            results.extend(paging_json_object.get("data", []))
+            page_data = paging_json_object.get("data", [])
+            # An empty page ends the walk. Without this a page that returns no data but still
+            # advertises a `next` link loops forever: `results` stops growing, so `max_results`
+            # cannot bound it, and the fingerprint guard above does not fire because each link
+            # (or each advancing cursor) is distinct. Meta ends an edge with no `next`, so an
+            # empty page carrying one is already anomalous and there is nothing left to collect.
+            if not page_data:
+                break
+            results.extend(page_data)
 
         return results[:max_results] if max_results is not None else results
 
