@@ -48,10 +48,13 @@ def run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
             results.append(fetch_one(item))
         except InsightMetricError as e:
             logger.error("%s %s: %s", label, item_id, e)
-            results.append(e.partial_result)
+            # `or item` because a partial_result the client failed to attach would otherwise put
+            # None in the results list, and the arrow converters dereference each entry — turning
+            # a handled degradation into an AttributeError.
+            results.append(e.partial_result or item)
             for m in e.metrics:
                 failed_metrics[m] = failed_metrics.get(m, 0) + 1
-        except requests.HTTPError as e:
+        except requests.RequestException as e:
             logger.error("%s %s: %s", label, item_id, e)
             results.append(item)
     if failed_metrics:
