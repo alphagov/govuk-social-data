@@ -1,6 +1,6 @@
 import pyarrow as pa
 
-from instagram.models import IGAccount, IGAccountInsightMetric, IGMedia, IGMediaInsightMetric
+from instagram.models import IGAccount, IGAccountInsightMetric, IGMedia
 
 ACCOUNT_SCHEMA: dict[str, pa.DataType] = {
     "ig_user_id": pa.string(),
@@ -87,13 +87,14 @@ def media_to_arrow(ig_user_id: str, media: list[IGMedia]) -> pa.Table:
     return _cast_table(rows, MEDIA_SCHEMA)
 
 
-def media_insights_to_arrow(media_id: str, insights: list[IGMediaInsightMetric]) -> pa.Table:
+def media_insights_to_arrow(media: list[IGMedia]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in MEDIA_INSIGHTS_SCHEMA}
-    for insight in insights:
-        if insight.value is None:
-            continue
-        rows["media_id"].append(media_id)
-        rows["metric"].append(insight.name)
-        rows["period"].append(insight.period)
-        rows["value"].append(insight.value)
+    for m in media:
+        for insight in m.insights:
+            if insight.value is None:
+                continue
+            rows["media_id"].append(m.id)
+            rows["metric"].append(insight.name)
+            rows["period"].append(insight.period)
+            rows["value"].append(insight.value)
     return _cast_table(rows, MEDIA_INSIGHTS_SCHEMA)

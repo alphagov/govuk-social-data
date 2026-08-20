@@ -2,8 +2,6 @@ import argparse
 import logging
 from datetime import date, datetime, timedelta, timezone
 
-import pyarrow as pa
-
 from instagram.api import ACCOUNT_DAY_METRICS, ACCOUNT_TOTAL_VALUE_METRICS, MEDIA_LIFETIME_METRICS, build_client
 from instagram.schemas import (
     ACCOUNT_INSIGHTS_SCHEMA,
@@ -65,7 +63,14 @@ def main() -> None:
     # Account info
     logger.info("Fetching account info...")
     account = client.get_account(ig_user_id)
-    upload_partitioned(account_to_arrow(account, ig_user_id), "instagram_account", ACCOUNT_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    upload_partitioned(
+        account_to_arrow(account, ig_user_id),
+        "instagram_account",
+        ACCOUNT_SCHEMA,
+        args.dataset,
+        target_date,
+        ingestion_timestamp,
+    )
 
     # Account insights
     logger.info("Fetching account insights for %s...", target_date)
@@ -73,28 +78,47 @@ def main() -> None:
     total_value_metrics = client.get_account_total_value_insights(
         ig_user_id, target_date, target_date, ACCOUNT_TOTAL_VALUE_METRICS
     )
-    upload_partitioned(account_insights_to_arrow(ig_user_id, day_metrics + total_value_metrics), "instagram_account_insights", ACCOUNT_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    upload_partitioned(
+        account_insights_to_arrow(ig_user_id, day_metrics + total_value_metrics),
+        "instagram_account_insights",
+        ACCOUNT_INSIGHTS_SCHEMA,
+        args.dataset,
+        target_date,
+        ingestion_timestamp,
+    )
 
     # Media
     logger.info("Fetching media%s...", f" (limit {args.media_limit})" if args.media_limit else "")
     media = client.get_media(ig_user_id, max_results=args.media_limit)
     logger.info("Found %d media items", len(media))
-    upload_partitioned(media_to_arrow(ig_user_id, media), "instagram_media", MEDIA_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    upload_partitioned(
+        media_to_arrow(ig_user_id, media),
+        "instagram_media",
+        MEDIA_SCHEMA,
+        args.dataset,
+        target_date,
+        ingestion_timestamp,
+    )
 
     # Media insights
     if args.run_media_insights:
         logger.info("Fetching insights for %d media items...", len(media))
-        all_media_insights = []
+        media_with_insights = []
         for i, m in enumerate(media, start=1):
             logger.info("Media %d/%d: %s", i, len(media), m.id)
-            insights = client.get_media_insights(m.id, MEDIA_LIFETIME_METRICS)
-            if insights:
-                all_media_insights.append(media_insights_to_arrow(m.id, insights))
+            media_with_insights.append(client.get_media_insights(m, MEDIA_LIFETIME_METRICS))
 
-        if all_media_insights:
-            upload_partitioned(pa.concat_tables(all_media_insights), "instagram_media_insights", MEDIA_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-        else:
-            logger.info("No media insights to load")
+        # The old `if insights:` / `if all_media_insights:` guards are unnecessary here, not
+        # dropped: a media item with no insights contributes no rows to the converter, and
+        # upload_partitioned already no-ops on an empty table.
+        upload_partitioned(
+            media_insights_to_arrow(media_with_insights),
+            "instagram_media_insights",
+            MEDIA_INSIGHTS_SCHEMA,
+            args.dataset,
+            target_date,
+            ingestion_timestamp,
+        )
     else:
         logger.info("Skipping media insights (--no-run-media-insights)")
 

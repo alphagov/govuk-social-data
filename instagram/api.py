@@ -166,27 +166,33 @@ class InstagramClient(GraphClient):
 
     def get_media_insights(
         self,
-        media_id: str,
+        media: IGMedia,
         metrics: list[str] | None = None,
-    ) -> list[IGMediaInsightMetric]:
+    ) -> IGMedia:
         if metrics is None:
             metrics = MEDIA_LIFETIME_METRICS
         try:
             data = self._get(
-                f"{media_id}/insights",
+                f"{media.id}/insights",
                 params={"metric": ",".join(metrics), "period": "lifetime"},
             )
         except requests.RequestException as e:
-            logger.warning("Could not fetch insights for media %s: %s", media_id, e)
-            return []
-        return [
-            IGMediaInsightMetric(
-                name=item["name"],
-                period=item.get("period", "lifetime"),
-                value=_extract_scalar_value(item),
-            )
-            for item in data.get("data", [])
-        ]
+            # This used to return [], which emitted no
+            # insight rows for this media item. Returning the un-enriched model (insights=[])
+            logger.warning("Could not fetch insights for media %s: %s", media.id, e)
+            return media
+        return media.model_copy(
+            update={
+                "insights": [
+                    IGMediaInsightMetric(
+                        name=item["name"],
+                        period=item.get("period", "lifetime"),
+                        value=_extract_scalar_value(item),
+                    )
+                    for item in data.get("data", [])
+                ]
+            }
+        )
 
 
 # ------------------------------------------------------------------
