@@ -108,8 +108,6 @@ def main() -> None:
             logger.info("Media %d/%d: %s", i, len(media), m.id)
             media_with_insights.append(client.get_media_insights(m, MEDIA_LIFETIME_METRICS))
 
-        # The old `if insights:` / `if all_media_insights:` guards are unnecessary here, not
-        # dropped: a media item with no insights contributes no rows to the converter, and
         # upload_partitioned already no-ops on an empty table.
         upload_partitioned(
             media_insights_to_arrow(media_with_insights),

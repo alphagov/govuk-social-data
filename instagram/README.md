@@ -64,7 +64,7 @@ Fetched via `GET /{media_id}/insights?period=lifetime`.
 | `shares` | Share count. |
 | `total_interactions` | Sum of all engagement metrics. |
 
-`likes`, `comments`, and `saved` are not valid for STORY media. The client swallows HTTP errors per-media-item (`get_media_insights` returns `[]` on failure) so a single story item in the feed does not break the pipeline.
+`likes`, `comments`, and `saved` are not valid for STORY media. The client swallows HTTP errors per-media-item (`get_media_insights` returns the media item un-enriched, i.e. `insights=[]`, on failure) so a single story item in the feed does not break the pipeline.
 
 ## BigQuery output tables
 
