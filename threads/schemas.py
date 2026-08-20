@@ -13,7 +13,6 @@ import pyarrow as pa
 from threads.models import (
     ThreadsAccountInsightMetric,
     ThreadsDemographicRow,
-    ThreadsLinkClick,
     ThreadsMedia,
     ThreadsProfile,
     ThreadsReply,
@@ -87,22 +86,13 @@ FOLLOWER_DEMOGRAPHICS_SCHEMA: dict[str, pa.DataType] = {
     "value": pa.int64(),
 }
 
-# --- Daily-mode tables ------------------------------------------------------------------------
+# --- Daily-mode table ---------------------------------------------------------------------------
 
 ACCOUNT_INSIGHTS_SCHEMA: dict[str, pa.DataType] = {
     "threads_user_id": pa.string(),
     "metric": pa.string(),
     "period": pa.string(),
     "end_time": pa.timestamp("s"),
-    "value": pa.int64(),
-}
-
-# `clicks` needs its own table: link_total_values is an array of (value, link_url) that does not fit
-# the scalar insights row above. Account-level only — post-level CTR is not derivable.
-LINK_CLICKS_SCHEMA: dict[str, pa.DataType] = {
-    "threads_user_id": pa.string(),
-    "metric": pa.string(),
-    "link_url": pa.string(),
     "value": pa.int64(),
 }
 
@@ -231,16 +221,3 @@ def account_insights_to_arrow(threads_user_id: str, metrics: list[ThreadsAccount
             rows["end_time"].append(v.end_time)
             rows["value"].append(int(v.value))
     return _cast_table(rows, ACCOUNT_INSIGHTS_SCHEMA)
-
-
-def link_clicks_to_arrow(threads_user_id: str, metric: str, clicks: list[ThreadsLinkClick]) -> pa.Table:
-    """One row per link. `metric` is passed in because ThreadsLinkClick holds only (link_url, value)."""
-    rows: dict[str, list] = {k: [] for k in LINK_CLICKS_SCHEMA}
-    for click in clicks:
-        if click.value is None:
-            continue
-        rows["threads_user_id"].append(threads_user_id)
-        rows["metric"].append(metric)
-        rows["link_url"].append(click.link_url)
-        rows["value"].append(int(click.value))
-    return _cast_table(rows, LINK_CLICKS_SCHEMA)

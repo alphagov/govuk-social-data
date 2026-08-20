@@ -35,13 +35,6 @@ class ThreadsMediaInsightMetric(BaseModel):
     value: int | None = None
 
 
-class ThreadsLinkClick(BaseModel):
-    """One entry of the `clicks` metric's link_total_values array."""
-
-    link_url: str | None = None
-    value: int | None = None
-
-
 class ThreadsDemographicRow(BaseModel):
     """One follower_demographics bucket, flattened out of the nested breakdown response."""
 
