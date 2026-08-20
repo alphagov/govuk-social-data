@@ -61,6 +61,44 @@ repos:
             echo "PASS"'
         stages: [manual]
         pass_filenames: true
+    -   id: threads-unit-tests
+        name: Threads unit tests
+        language: system
+        entry: poetry run pytest tests/test_threads.py -m "not integration" -q --tb=short
+        stages: [pre-commit]
+        pass_filenames: false
+        always_run: true
+    -   id: threads-integrated-tests
+        name: Threads API integration (pre-push)
+        language: system
+        entry: poetry run pytest tests/test_threads.py -m integration -q --tb=short
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+    -   id: threads-api-http-tests
+        name: Threads metric tests (pre-push)
+        language: system
+        entry: poetry run pytest tests/test_threads_http.py -m integration -q --tb=short
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+    -   id: threads-smoke-test
+        name: threads live smoke test
+        language: system
+        entry: >-
+            bash -c '
+            set -o pipefail;
+            LOG="smoke_test_threads_$(date +%Y%m%d_%H%M%S).log";
+            poetry run python -m threads.main --mode daily --dataset govuk_threads_dev 2>&1 | tee "$LOG";
+            EXIT_CODE=${PIPESTATUS[0]};
+            [ $EXIT_CODE -ne 0 ] && { echo "FAIL: daily mode exited $EXIT_CODE"; exit 1; };
+            poetry run python -m threads.main --mode snapshot --media-limit 10 --reply-limit 10 --dataset govuk_threads_dev 2>&1 | tee -a "$LOG";
+            EXIT_CODE=${PIPESTATUS[0]};
+            [ $EXIT_CODE -ne 0 ] && { echo "FAIL: snapshot mode exited $EXIT_CODE"; exit 1; };
+            grep -q "Uploaded.*rows →" "$LOG" || { echo "FAIL: no uploads found"; exit 1; };
+            echo "PASS"'
+        stages: [manual]
+        pass_filenames: true
     -   id: instagram-smoke-test
         name: instagram live smoke test
         language: system
