@@ -1,3 +1,11 @@
+"""
+Schemas defines the output schemas for the pyarrow tables that are uploaded to BigQuery. 
+Each schema is a dictionary mapping column names to pyarrow data types. For some uploads additional columns
+are added to the models imported from models.py via helper functions. This explains some of the discrepencies
+betweeen models.py and schemas.py. The schemas are also used to cast the pyarrow tables to the correct types before 
+upload.
+"""
+
 import pyarrow as pa
 
 from facebook.api import VIDEO_SCALAR_METRICS

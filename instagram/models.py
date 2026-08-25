@@ -24,6 +24,12 @@ class IGAccountInsightMetric(BaseModel):
     values: list[IGInsightValue] = []
 
 
+class IGMediaInsightMetric(BaseModel):
+    name: str
+    period: str
+    value: int | None = None
+
+
 class IGMedia(BaseModel):
     id: str
     caption: str | None = None
@@ -35,9 +41,4 @@ class IGMedia(BaseModel):
     timestamp: datetime | None = None
     like_count: int | None = None
     comments_count: int | None = None
-
-
-class IGMediaInsightMetric(BaseModel):
-    name: str
-    period: str
-    value: int | None = None
+    insights: list[IGMediaInsightMetric] = []

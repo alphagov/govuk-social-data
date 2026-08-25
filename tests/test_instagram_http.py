@@ -45,6 +45,22 @@ MEDIA_LIFETIME_METRICS = [
     "total_interactions",
 ]
 
+# Field list requested from the /media edge — mirrors instagram.api.get_media.
+MEDIA_FIELDS = ",".join(
+    [
+        "id",
+        "caption",
+        "media_type",
+        "media_product_type",
+        "permalink",
+        "thumbnail_url",
+        "media_url",
+        "timestamp",
+        "like_count",
+        "comments_count",
+    ]
+)
+
 # Date window used for day-period account insight queries.
 # follower_count only supports the last 30 days, so keep this window recent.
 _UNTIL = (date.today() - timedelta(days=10)).isoformat()
@@ -170,7 +186,7 @@ def test_http_ig_media_edge(_http):
         f"{_http['ig_user_id']}/media",
         _http["token"],
         {
-            "fields": "id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count,comments_count",
+            "fields": MEDIA_FIELDS,
             "limit": "10",
         },
     )
@@ -178,6 +194,28 @@ def test_http_ig_media_edge(_http):
     data = r.json()
     assert "data" in data
     assert len(data["data"]) > 0, "Expected at least one media item"
+
+
+@pytest.mark.integration
+def test_http_ig_media_edge_pages_by_cursor(_http):
+    """This checks /media edge returns a cursor, not just an absolute next link.
+
+    It matters because loads are WRITE_TRUNCATE per target_date: if this edge stopped offering
+    cursors and the fallback were ever wrong, a silent truncation would replace full history
+    with a single page and raise nothing.
+
+    Requests exactly what instagram.api.get_media requests, so the answer describes production
+    rather than a convenient smaller query.
+    """
+    r = _get(
+        f"{_http['ig_user_id']}/media",
+        _http["token"],
+        {"fields": MEDIA_FIELDS, "limit": "100"},
+    )
+    assert r.status_code == 200, r.text
+    paging = r.json().get("paging", {})
+    assert "next" in paging, "account has one page at limit=100 — cannot confirm cursor behaviour"
+    assert paging.get("cursors", {}).get("after"), f"no cursors.after in paging: {paging}"
 
 
 # ------------------------------------------------------------------

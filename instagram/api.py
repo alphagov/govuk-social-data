@@ -1,11 +1,12 @@
 import logging
-import time
 from datetime import date, timedelta
 
 import requests
 
 from instagram.models import IGAccount, IGAccountInsightMetric, IGInsightValue, IGMedia, IGMediaInsightMetric
 from src.authentication import get_gcp_secret
+from src.meta.auth import get_graph_token
+from src.meta.client import GraphClient
 
 logger = logging.getLogger(__name__)
 
@@ -46,62 +47,20 @@ def build_client() -> tuple["InstagramClient", str]:
     Instagram long-lived tokens are stored as plain strings in Secret Manager,
     unlike the Facebook token which is JSON-wrapped.
     """
-    token = get_gcp_secret(TOKEN_SECRET, project_id=PROJECT_ID).strip()
+    token = get_graph_token(TOKEN_SECRET)
     ig_user_id = get_gcp_secret(IG_USER_ID_SECRET, project_id=PROJECT_ID).strip()
     return InstagramClient(access_token=token), ig_user_id
 
 
-def daterange_chunks(start_date: date, end_date: date, chunk_days: int = 30) -> list[tuple[date, date]]:
-    chunks: list[tuple[date, date]] = []
-    cur = start_date
-    while cur <= end_date:
-        chunk_end = min(cur + timedelta(days=chunk_days - 1), end_date)
-        chunks.append((cur, chunk_end))
-        cur = chunk_end + timedelta(days=1)
-    return chunks
+class InstagramClient(GraphClient):
+    """Graph API client for an Instagram Business account.
 
+    Transport — _get with its retry/backoff, _paginate, _next_page and _fetch_insight_items —
+    is inherited from GraphClient and deliberately not overridden here. This class supplies the
+    base URL, the metric constants and the model builders.
+    """
 
-class InstagramClient:
-    def __init__(self, access_token: str) -> None:
-        self._session = requests.Session()
-        self._session.params = {"access_token": access_token}  # type: ignore[assignment]
-
-    def _get(self, path: str, params: dict | None = None, retries: int = 3) -> dict:
-        url = path if path.startswith("http") else f"{BASE_URL}/{path.lstrip('/')}"
-        for attempt in range(retries):
-            try:
-                response = self._session.get(url, params=params or {}, timeout=30)
-            except (requests.Timeout, requests.ConnectionError) as e:
-                if attempt == retries - 1:
-                    raise
-                wait = 2**attempt
-                logger.warning("Request error (%s), retrying in %ds", e, wait)
-                time.sleep(wait)
-                continue
-            if response.status_code == 429:
-                logger.warning("Rate limited, waiting 60s")
-                time.sleep(60)
-                continue
-            if response.status_code >= 500:
-                wait = 2**attempt
-                logger.warning("HTTP %d, retrying in %ds", response.status_code, wait)
-                time.sleep(wait)
-                continue
-            response.raise_for_status()
-            return response.json()
-        response.raise_for_status()
-
-    def _paginate(self, path: str, params: dict | None = None, max_results: int | None = None) -> list[dict]:
-        results: list[dict] = []
-        data = self._get(path, params)
-        results.extend(data.get("data", []))
-        while max_results is None or len(results) < max_results:
-            next_url = data.get("paging", {}).get("next")
-            if not next_url:
-                break
-            data = self._get(next_url)
-            results.extend(data.get("data", []))
-        return results[:max_results] if max_results is not None else results
+    BASE_URL = BASE_URL  # module constant above; consumed by GraphClient._get
 
     # ------------------------------------------------------------------
     # Account node
@@ -185,10 +144,19 @@ class InstagramClient:
         raw = self._paginate(
             f"{ig_user_id}/media",
             params={
-                "fields": "id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count,comments_count",
+                "fields": (
+                    "id,caption,media_type,media_product_type,permalink,"
+                    "thumbnail_url,media_url,timestamp,like_count,comments_count"
+                ),
                 "limit": limit,
             },
             max_results=max_results,
+            # Preserves today's semantics rather than changing them: this module has no
+            # try/except, so a pagination failure has always killed the run. The inherited
+            # default (False) would instead return a partial list that upload_partitioned
+            # WRITE_TRUNCATEs over a good partition — a 4,000-item account failing at page 14
+            # would land 1,300 rows and exit 0. Batch 6 turns this into a partial_result.
+            raise_on_failure=True,
         )
         return [IGMedia.model_validate(item) for item in raw]
 
@@ -198,27 +166,33 @@ class InstagramClient:
 
     def get_media_insights(
         self,
-        media_id: str,
+        media: IGMedia,
         metrics: list[str] | None = None,
-    ) -> list[IGMediaInsightMetric]:
+    ) -> IGMedia:
         if metrics is None:
             metrics = MEDIA_LIFETIME_METRICS
         try:
             data = self._get(
-                f"{media_id}/insights",
+                f"{media.id}/insights",
                 params={"metric": ",".join(metrics), "period": "lifetime"},
             )
         except requests.RequestException as e:
-            logger.warning("Could not fetch insights for media %s: %s", media_id, e)
-            return []
-        return [
-            IGMediaInsightMetric(
-                name=item["name"],
-                period=item.get("period", "lifetime"),
-                value=_extract_scalar_value(item),
-            )
-            for item in data.get("data", [])
-        ]
+            # This used to return [], which emitted no
+            # insight rows for this media item. Returning the un-enriched model (insights=[])
+            logger.warning("Could not fetch insights for media %s: %s", media.id, e)
+            return media
+        return media.model_copy(
+            update={
+                "insights": [
+                    IGMediaInsightMetric(
+                        name=item["name"],
+                        period=item.get("period", "lifetime"),
+                        value=_extract_scalar_value(item),
+                    )
+                    for item in data.get("data", [])
+                ]
+            }
+        )
 
 
 # ------------------------------------------------------------------

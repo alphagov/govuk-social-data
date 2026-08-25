@@ -18,7 +18,15 @@ from facebook.api import (
     VIDEO_METRICS,
     VIDEO_SCALAR_METRICS,
 )
-from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric, Video
+from facebook.models import (
+    FacebookReelInsights,
+    Page,
+    PageInsightMetric,
+    PageInsightValue,
+    Post,
+    PostInsightMetric,
+    Video,
+)
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
     PAGE_INSIGHTS_SCHEMA,
@@ -290,9 +298,7 @@ def _make_fake_get(metric_names: list[str], failing_metric: str):
         metric = params["metric"]
         if metric in (joined, failing_metric):
             raise _http_error(400)
-        return {
-            "data": [{"name": metric, "period": "lifetime", "values": [{"value": _fake_metric_value(metric)}]}]
-        }
+        return {"data": [{"name": metric, "period": "lifetime", "values": [{"value": _fake_metric_value(metric)}]}]}
 
     return fake_get
 
@@ -312,9 +318,7 @@ def test_fetch_insight_items_raises_with_specific_metric(monkeypatch):
     monkeypatch.setattr(client, "_get", _make_fake_get(POST_METRICS, "post_clicks"))
 
     with pytest.raises(InsightMetricError) as exc_info:
-        client._fetch_insight_items(
-            f"{POST_ID}/insights", POST_METRICS, {"period": "lifetime"}, raise_on_failure=True
-        )
+        client._fetch_insight_items(f"{POST_ID}/insights", POST_METRICS, {"period": "lifetime"}, raise_on_failure=True)
 
     err = exc_info.value
     assert err.metrics == ["post_clicks"]
@@ -353,6 +357,102 @@ def test_get_post_insights_partial_result_on_metric_failure(monkeypatch):
     names = {i.name for i in err.partial_result.insights}
     assert failing_metric not in names
     assert names == set(POST_METRICS) - {failing_metric}
+
+
+# ------------------------------------------------------------------
+# _paginate — loop control flow
+# ------------------------------------------------------------------
+#
+# These assert only how our loop behaves given a page dict: does it advance, does it stop.
+# They deliberately assert nothing about what the Graph API actually returns, since that
+# would just be us predicting our own stub.
+#
+# Worth pinning because the live pipeline is the only thing that exercises this — every
+# limited invocation (--post-limit N, and the integration tests below) passes the same value
+# as both the per-page `limit` and the total `max_results`, so `len(results) < max_results`
+# is false after page one and the loop body never runs.
+
+
+def _paging(after=None, next_url=None):
+    paging = {}
+    if next_url:
+        paging["next"] = next_url
+    if after:
+        paging["cursors"] = {"after": after}
+    return paging
+
+
+def _stub_pages(monkeypatch, client, pages):
+    """Serve `pages` in order, recording each (path, params) the client asks for."""
+    calls = []
+
+    def fake_get(path, params=None, retries=3):
+        calls.append((path, dict(params or {})))
+        return pages[min(len(calls) - 1, len(pages) - 1)]
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    return calls
+
+
+def test_paginate_walks_to_the_next_page(monkeypatch):
+    client = FacebookClient(access_token="test-token")
+    calls = _stub_pages(
+        monkeypatch,
+        client,
+        [
+            {"data": [{"id": "1"}], "paging": _paging(after="CUR", next_url="https://next.example/p2")},
+            {"data": [{"id": "2"}]},
+        ],
+    )
+
+    assert client._paginate("123/posts", {"fields": "id"}) == [{"id": "1"}, {"id": "2"}]
+    assert len(calls) == 2
+    assert calls[1][0] == calls[0][0], "page 2 comes from the same endpoint, not the absolute next link"
+    assert calls[1][1]["after"] == "CUR"
+    assert calls[1][1]["fields"] == "id", "our own params must carry onto page 2"
+
+
+def test_paginate_stops_when_a_page_is_empty(monkeypatch):
+    """A page with no data but a next link still advertised must not loop: results stop
+    growing, so max_results cannot bound it."""
+    client = FacebookClient(access_token="test-token")
+    calls = _stub_pages(
+        monkeypatch,
+        client,
+        [
+            {"data": [{"id": "1"}], "paging": _paging(after="CUR", next_url="https://next.example/p2")},
+            {"data": [], "paging": _paging(after="CUR2", next_url="https://next.example/p3")},
+        ],
+    )
+
+    assert client._paginate("123/posts", {"fields": "id"}) == [{"id": "1"}]
+    assert len(calls) == 2
+
+
+def test_paginate_stops_when_a_request_repeats(monkeypatch):
+    """A next link pointing back at itself must not be followed forever."""
+    client = FacebookClient(access_token="test-token")
+    calls = _stub_pages(
+        monkeypatch,
+        client,
+        [{"data": [{"id": "1"}], "paging": _paging(next_url="https://next.example/same")}],
+    )
+
+    client._paginate("123/posts", {"fields": "id"})
+    assert len(calls) == 2, "second request repeats the first target, so the walk stops"
+
+
+def test_paginate_stops_without_a_next_link(monkeypatch):
+    """A cursor with no next link is the last page — next is the authoritative signal."""
+    client = FacebookClient(access_token="test-token")
+    calls = _stub_pages(
+        monkeypatch,
+        client,
+        [{"data": [{"id": "1"}], "paging": _paging(after="CUR")}],
+    )
+
+    assert client._paginate("123/posts", {"fields": "id"}) == [{"id": "1"}]
+    assert len(calls) == 1
 
 
 # ------------------------------------------------------------------
@@ -423,6 +523,7 @@ def _first_video_with_insights(_fb):
         if insights is not None and any(getattr(insights, f) is not None for f in FacebookReelInsights.model_fields):
             return result
     pytest.skip("No video with populated insights found in the most recent 10 videos")
+
 
 # ------------------------------------------------------------------
 # Basic client / node / edge tests

@@ -100,6 +100,12 @@ def sample_media_insights() -> list[IGMediaInsightMetric]:
     ]
 
 
+@pytest.fixture
+def sample_media_with_insights(sample_media, sample_media_insights) -> list[IGMedia]:
+    """One media item carrying the sample insights — the shape media_insights_to_arrow now takes."""
+    return [sample_media[0].model_copy(update={"insights": sample_media_insights})]
+
+
 # ------------------------------------------------------------------
 # enrich / with_ingestion_cols (shared pipeline helpers)
 # ------------------------------------------------------------------
@@ -225,28 +231,35 @@ def test_media_to_arrow_values(sample_media):
 # ------------------------------------------------------------------
 
 
-def test_media_insights_to_arrow_schema(sample_media_insights):
-    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights)
+def test_media_insights_to_arrow_schema(sample_media_with_insights):
+    table = media_insights_to_arrow(sample_media_with_insights)
     assert table.schema == pa.schema([(k, MEDIA_INSIGHTS_SCHEMA[k]) for k in MEDIA_INSIGHTS_SCHEMA])
 
 
-def test_media_insights_to_arrow_skips_none_values(sample_media_insights):
-    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights)
+def test_media_insights_to_arrow_skips_none_values(sample_media_with_insights):
+    table = media_insights_to_arrow(sample_media_with_insights)
     # "views" has value=None and should be excluded
     assert "views" not in table["metric"].to_pylist()
 
 
-def test_media_insights_to_arrow_row_count(sample_media_insights):
-    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights)
+def test_media_insights_to_arrow_row_count(sample_media_with_insights):
+    table = media_insights_to_arrow(sample_media_with_insights)
     # reach + likes = 2 rows (views skipped)
     assert len(table) == 2
 
 
-def test_media_insights_to_arrow_values(sample_media_insights):
-    table = media_insights_to_arrow(MEDIA_ID, sample_media_insights)
+def test_media_insights_to_arrow_values(sample_media_with_insights):
+    table = media_insights_to_arrow(sample_media_with_insights)
     assert table["media_id"][0].as_py() == MEDIA_ID
     assert table["metric"][0].as_py() == "reach"
     assert table["value"][0].as_py() == 500
+
+
+def test_media_insights_to_arrow_media_without_insights_contributes_no_rows(sample_media):
+    # Previously main.py's `if insights:` guard; the behaviour now lives in the converter.
+    table = media_insights_to_arrow(sample_media)
+    assert len(table) == 0
+    assert table.schema == pa.schema([(k, MEDIA_INSIGHTS_SCHEMA[k]) for k in MEDIA_INSIGHTS_SCHEMA])
 
 
 # ------------------------------------------------------------------
@@ -265,8 +278,9 @@ def _ig():
 
     client, ig_user_id = build_client()
     media = client.get_media(ig_user_id, max_results=1)
-    media_id = media[0].id if media else None
-    return {"client": client, "ig_user_id": ig_user_id, "media_id": media_id}
+    first_media = media[0] if media else None
+    media_id = first_media.id if first_media else None
+    return {"client": client, "ig_user_id": ig_user_id, "media_id": media_id, "media": first_media}
 
 
 @pytest.fixture(scope="module")
@@ -282,10 +296,10 @@ def _account_insight_names(_ig):
 
 @pytest.fixture(scope="module")
 def _media_insight_names(_ig):
-    if not _ig["media_id"]:
+    if not _ig["media"]:
         return set()
-    insights = _ig["client"].get_media_insights(_ig["media_id"])
-    return {m.name for m in insights}
+    enriched = _ig["client"].get_media_insights(_ig["media"])
+    return {m.name for m in enriched.insights}
 
 
 @pytest.mark.integration

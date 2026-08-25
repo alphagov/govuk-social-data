@@ -1,9 +1,9 @@
 """
-The purpose of this API file is to access the endpoints of the facebook graph API, which are structued via the node,
-edge attribute structured. 
+The purpose of this API file is to access the endpoints of the facebook graph API, which are
+structured via the node/edge attribute structure.
 
-
-The rough call structure is 
+The rough call structure is, with _paginate, _fetch_insight_items and _get all inherited from
+src.meta.client.GraphClient rather than defined here:
 
 Facebook client - (account Node)
 |
@@ -12,11 +12,11 @@ Facebook client - (account Node)
 |-- get_posts            _paginate              _get
 |-- get_page                                    _get
 |-- get_page_insights    _fetch_insight_items   _get
-|-- get_video_insights   _fetch_insights_items   _get
-|-- get_post_insights    _fetch_insight_items    _get
+|-- get_video_insights   _fetch_insight_items   _get
+|-- get_post_insights    _fetch_insight_items   _get
 
 
-Graph structure 
+Graph structure
 
 Node    Edge            Node        Edge
 - Page
@@ -24,14 +24,8 @@ Node    Edge            Node        Edge
         - posts         -Video      - insights
         - insights
 """
-from http import HTTPStatus
-import json
-import logging
-import time
-from datetime import datetime
 
-import requests
-from requests.exceptions import HTTPError
+import logging
 
 from facebook.models import (
     FacebookReelInsights,
@@ -42,7 +36,13 @@ from facebook.models import (
     PostInsightMetric,
     Video,
 )
-from src.authentication import FileTokenCache, get_gcp_secret
+from src.authentication import FileTokenCache
+from src.meta.auth import get_graph_token
+from src.meta.client import GraphClient
+
+# Re-exported: facebook/main.py and tests/test_facebook.py import these from here, and the
+# top-level fetch functions below catch them.
+from src.meta.errors import InsightMetricError, PaginationError  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -114,14 +114,8 @@ VIDEO_DICT_METRICS = [
 ]
 VIDEO_METRICS = VIDEO_SCALAR_METRICS + VIDEO_DICT_METRICS
 
-# video_reels object 
-REEL_SCALAR_METRICS = {
-    "video_id", 
-    "upload_url", 
-    "success", 
-    "message", 
-    "post_id" 
-}
+# video_reels object
+REEL_SCALAR_METRICS = {"video_id", "upload_url", "success", "message", "post_id"}
 
 REEL_DICT_METRICS = {}
 
@@ -132,48 +126,10 @@ REEL_DICT_METRICS = {}
 
 
 def build_client() -> "FacebookClient":
-    cached = _FACEBOOK_TOKEN_CACHE.load_valid()
-    if cached:
-        logger.info("Using cached Facebook access token")
-        return FacebookClient(access_token=cached["access_token"])
-
-    try:
-        access_token = json.loads(get_gcp_secret(TOKEN_JSON_SECRET))["access_token"]
-    except Exception:
-        logger.warning("Token refresh failed, retrying with latest secret version")
-        access_token = json.loads(get_gcp_secret(TOKEN_JSON_SECRET, "latest"))["access_token"]
-
-    return FacebookClient(access_token=access_token)
-
-
-class InsightMetricError(RuntimeError):
-    """Raised when one or more Graph API insight metrics fail. Carries the metrics that DID
-    succeed (`items`) and, once the caller attaches it, the partially-populated result
-    (`partial_result`) so failures never discard data for the metrics that worked."""
-
-    def __init__(self, path: str, metrics: list[str], causes: dict[str, Exception], items: list[dict]):
-        self.path = path
-        self.metrics = metrics
-        self.causes = causes
-        self.items = items
-        self.partial_result = None  # set by get_video_insights/get_post_insights before re-raising
-        detail = "; ".join(f"{m}: {causes[m]}" for m in metrics)
-        super().__init__(f"{len(metrics)} metric(s) failed for {path} — {detail}")
-
-
-class PaginationError(RuntimeError):
-    """Raised when a paginated Graph API fetch fails before exhausting all pages. Carries the
-    pages that DID succeed (`items`) and, once the caller attaches it, the partially-populated
-    result (`partial_result`) so failures never discard data for the pages that worked."""
-
-    def __init__(self, path: str, params: dict | None, causes: list[dict], items: list[dict]):
-        self.path = path
-        self.params = params
-        self.causes = causes
-        self.items = items
-        self.partial_result = None  # set by get_posts/get_videos before re-raising
-        detail = "; ".join(str(c["exception"]) for c in causes)
-        super().__init__(f"Pagination failed for {path} after {len(items)} result(s) — {detail}")
+    """Build a FacebookClient from the JSON-wrapped page token in Secret Manager."""
+    return FacebookClient(
+        access_token=get_graph_token(TOKEN_JSON_SECRET, json_wrapped=True, cache=_FACEBOOK_TOKEN_CACHE)
+    )
 
 
 # ------------------------------------------------------------------
@@ -181,126 +137,14 @@ class PaginationError(RuntimeError):
 # ------------------------------------------------------------------
 
 
-class FacebookClient:
-    def __init__(self, access_token: str) -> None:
-        self._session = requests.Session()
-        self._session.params = {"access_token": access_token}  # type: ignore[assignment]
+class FacebookClient(GraphClient):
+    """Graph API client for a Facebook Page.
 
-    def _get(self, path: str, params: dict | None = None, retries: int = 3) -> dict:
-        url = f"{FB_GRAPH_BASE}/{path.lstrip('/')}"
-        # 429 gets its own fixed 60s cooldown (Graph API rate-limit window), separate from the
-        # exponential backoff used for transient 5xx errors and network failures below.
-        retry_codes = [
-            HTTPStatus.INTERNAL_SERVER_ERROR,
-            HTTPStatus.BAD_GATEWAY,
-            HTTPStatus.SERVICE_UNAVAILABLE,
-            HTTPStatus.GATEWAY_TIMEOUT,
-        ]
+    Transport (_get, _paginate, _fetch_insight_items) is inherited from GraphClient; this class
+    supplies the base URL, the metric constants and the model builders.
+    """
 
-        last_exception: Exception | None = None
-        for attempt in range(retries):
-            wait = 2**attempt
-            try:
-                response = self._session.get(url, params=params or {}, timeout=30)
-                response.raise_for_status()
-                return response.json()
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
-                last_exception = exc
-                logger.warning("Request error for path %s, params %s, retrying in %ds: %s", path, params, wait, exc)
-                time.sleep(wait)
-            except HTTPError as exc:
-                last_exception = exc
-                code = exc.response.status_code
-                if code == HTTPStatus.TOO_MANY_REQUESTS:
-                    logger.warning("Rate limited for path %s, params %s, waiting 60s", path, params)
-                    time.sleep(60)
-                elif code in retry_codes:
-                    logger.warning("HTTP %d for path %s, params %s, retrying in %ds", code, path, params, wait)
-                    time.sleep(wait)
-                else:
-                    raise
-
-        raise last_exception
-
-
-    def _paginate(
-        self, path: str, params: dict | None = None, max_results: int | None = None, raise_on_failure: bool = False
-    ) -> list[dict]:
-        '''
-
-        Given a target path and params, will query the endpoint which returns an object with paging and data
-        objects.
-        page
-
-
-        Parameters:
-            path: Endpoint being queries
-            params: fields being requests as part of http call to end point
-            max_results: the maximum number of results that can be returned, by default is something odd like 3
-                by passing None we ensure all results are returned
-
-
-
-        Other:
-            https://developers.facebook.com/docs/graph-api/results/
-            Enpoint query returns an object with Data and Paging mappings
-                Data json object:
-                    The insights for the video/posts node/path, fields
-
-                Paging json object:
-                    Cursors object:
-                        before : This is the cursor that points to the start of the page of data that has been
-                        returnev - hash value.
-                        after : This is the cursor that points to the end of the page of data that has been
-                        returned - hash value.
-
-                                    {
-                    next : The Graph API endpoint that will return the next page of data. If not included,
-                        this is the last page of data e.g.
-                        "https://graph.facebook.com/{your-user-id}/albums?limit=25&before=NDMyNzQyODI3OTQw"
-                    previous : The Graph API endpoint that will return the previous page of data. If not included,
-                        this is the first page of data e.g.
-                        "https://graph.facebook.com/{your-user-id}/albums?limit=25&before=NDMyNzQyODI3OTQw"
-
-
-        Returns:
-            results: A list of data objects, provided by all the endpoint calls for the given ids and params
-
-
-        On failure of a single ID the logger raises a warning and
-        '''
-        results: list[dict] = []
-        causes: list[dict] = []
-        try:
-            paging_json_object = self._get(path, params)  # Returns the json containing data and paging objects
-            results.extend(paging_json_object.get("data", [])) # gets the data object for the first object
-            logger.debug(f"Data retrieved from endpoint {path} with params {params}")
-            # if we have a bad endpoint do we end the run completely?
-        except Exception as e:
-            logger.warning(f"Failed to return endpoint {path} with params {params}, error {e}")
-            causes.append({'exception':e, 'path':path, 'params':params})
-            if raise_on_failure:
-                raise PaginationError(path, params, causes, results)
-            return results
-
-        while max_results is None or len(results) < max_results:
-            paging = paging_json_object.get("paging", {})   # returns paging object, which contains the cursor
-            after_cursor = paging.get("cursors", {}).get("after") # gets the next object hash, is it possible
-            if not after_cursor or not paging.get("next"):
-                break
-            try:
-                paging_json_object = self._get(path, {**(params or {}), "after": after_cursor})
-            except Exception as e:
-                logger.warning(
-                                "Pagination failed for %s after %d result(s); stopping early: %s", path, len(results), e
-                            )
-                causes.append({'exception':e, 'path':path, 'params':params})
-                if raise_on_failure:
-                    raise PaginationError(path, params, causes, results)
-                break
-            results.extend(paging_json_object.get("data",[]))
-
-        return results[:max_results] if max_results is not None else results
+    BASE_URL = FB_GRAPH_BASE
 
     # ------------------------------------------------------------------
     # Page node
@@ -322,44 +166,6 @@ class FacebookClient:
     # ------------------------------------------------------------------
     # Page/insights edge
     # ------------------------------------------------------------------
-
-    def _fetch_insight_items(
-        self, path: str, metric_names: list[str], params: dict, raise_on_failure: bool = False
-    ) -> list[dict]:
-        """Fetches insight items, falling back to per-metric requests on a 400.
-
-        The Graph API rejects the entire batch if any single metric is unavailable
-        for the page (e.g. follower metrics require specific permissions). Retrying
-        individually lets us collect what is accessible and skip what is not.
-
-        If raise_on_failure is True, any metric(s) that still fail after the per-metric
-        retry raise InsightMetricError (naming the specific metric and cause) instead of
-        being silently skipped. The metrics that did succeed are still returned/attached.
-        """
-        try:
-            data = self._get(path, {**params, "metric": ",".join(metric_names)})
-            return data.get("data", [])
-        except requests.HTTPError as e:
-            if e.response is None or e.response.status_code != 400:
-                raise
-            logger.warning("Batch insights request returned 400, retrying per metric")
-
-        items: list[dict] = []
-        skipped: list[str] = []
-        causes: dict[str, Exception] = {}
-        for metric in metric_names:
-            try:
-                data = self._get(path, {**params, "metric": metric})
-                items.extend(data.get("data", []))
-            except requests.HTTPError as e:
-                skipped.append(metric)
-                causes[metric] = e
-        if skipped:
-            if raise_on_failure:
-                logger.error("Metric(s) failed for %s: %s", path, ", ".join(skipped))
-                raise InsightMetricError(path, skipped, causes, items)
-            logger.warning("Skipped %d unavailable metric(s): %s", len(skipped), ", ".join(skipped))
-        return items
 
     def get_page_insights(self, page_id: str, since: str, until: str) -> list[PageInsightMetric]:
         metrics: list[PageInsightMetric] = []
@@ -403,11 +209,11 @@ class FacebookClient:
             if attachments:
                 post_type = attachments[0].get("type", "status")
             reactions = {
-                "LIKE":  raw.get("like_reactions",  {}).get("summary", {}).get("total_count", 0),
-                "LOVE":  raw.get("love_reactions",  {}).get("summary", {}).get("total_count", 0),
-                "WOW":   raw.get("wow_reactions",   {}).get("summary", {}).get("total_count", 0),
-                "HAHA":  raw.get("haha_reactions",  {}).get("summary", {}).get("total_count", 0),
-                "SAD":   raw.get("sad_reactions",   {}).get("summary", {}).get("total_count", 0),
+                "LIKE": raw.get("like_reactions", {}).get("summary", {}).get("total_count", 0),
+                "LOVE": raw.get("love_reactions", {}).get("summary", {}).get("total_count", 0),
+                "WOW": raw.get("wow_reactions", {}).get("summary", {}).get("total_count", 0),
+                "HAHA": raw.get("haha_reactions", {}).get("summary", {}).get("total_count", 0),
+                "SAD": raw.get("sad_reactions", {}).get("summary", {}).get("total_count", 0),
                 "ANGRY": raw.get("angry_reactions", {}).get("summary", {}).get("total_count", 0),
             }
             posts.append(
@@ -424,9 +230,7 @@ class FacebookClient:
         return posts
 
     def get_posts(self, page_id: str, limit: int | None = None, max_results: int | None = None) -> list[Post]:
-        params: dict = {
-            "fields": f"id,message,created_time,permalink_url,attachments{{type}},{_REACTION_FIELDS}"
-        }
+        params: dict = {"fields": f"id,message,created_time,permalink_url,attachments{{type}},{_REACTION_FIELDS}"}
         if limit is not None:
             params["limit"] = limit
         try:
