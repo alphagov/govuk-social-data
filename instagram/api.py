@@ -185,7 +185,10 @@ class InstagramClient:
         raw = self._paginate(
             f"{ig_user_id}/media",
             params={
-                "fields": "id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count,comments_count",
+                "fields": (
+                    "id,caption,media_type,media_product_type,permalink,"
+                    "thumbnail_url,media_url,timestamp,like_count,comments_count"
+                ),
                 "limit": limit,
             },
             max_results=max_results,

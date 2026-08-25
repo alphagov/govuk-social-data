@@ -65,7 +65,14 @@ def main() -> None:
     # Account info
     logger.info("Fetching account info...")
     account = client.get_account(ig_user_id)
-    upload_partitioned(account_to_arrow(account, ig_user_id), "instagram_account", ACCOUNT_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    upload_partitioned(
+        account_to_arrow(account, ig_user_id),
+        "instagram_account",
+        ACCOUNT_SCHEMA,
+        args.dataset,
+        target_date,
+        ingestion_timestamp,
+    )
 
     # Account insights
     logger.info("Fetching account insights for %s...", target_date)
@@ -73,13 +80,27 @@ def main() -> None:
     total_value_metrics = client.get_account_total_value_insights(
         ig_user_id, target_date, target_date, ACCOUNT_TOTAL_VALUE_METRICS
     )
-    upload_partitioned(account_insights_to_arrow(ig_user_id, day_metrics + total_value_metrics), "instagram_account_insights", ACCOUNT_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    upload_partitioned(
+        account_insights_to_arrow(ig_user_id, day_metrics + total_value_metrics),
+        "instagram_account_insights",
+        ACCOUNT_INSIGHTS_SCHEMA,
+        args.dataset,
+        target_date,
+        ingestion_timestamp,
+    )
 
     # Media
     logger.info("Fetching media%s...", f" (limit {args.media_limit})" if args.media_limit else "")
     media = client.get_media(ig_user_id, max_results=args.media_limit)
     logger.info("Found %d media items", len(media))
-    upload_partitioned(media_to_arrow(ig_user_id, media), "instagram_media", MEDIA_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+    upload_partitioned(
+        media_to_arrow(ig_user_id, media),
+        "instagram_media",
+        MEDIA_SCHEMA,
+        args.dataset,
+        target_date,
+        ingestion_timestamp,
+    )
 
     # Media insights
     if args.run_media_insights:
@@ -92,7 +113,14 @@ def main() -> None:
                 all_media_insights.append(media_insights_to_arrow(m.id, insights))
 
         if all_media_insights:
-            upload_partitioned(pa.concat_tables(all_media_insights), "instagram_media_insights", MEDIA_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(
+                pa.concat_tables(all_media_insights),
+                "instagram_media_insights",
+                MEDIA_INSIGHTS_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
         else:
             logger.info("No media insights to load")
     else:

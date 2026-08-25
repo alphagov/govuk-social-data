@@ -5,7 +5,6 @@ import sys
 
 from datetime import datetime, timedelta, timezone
 
-import pyarrow as pa
 import requests
 
 from facebook.api import PAGE_ID_SECRET, PROJECT_ID, InsightMetricError, PaginationError, build_client
@@ -102,7 +101,7 @@ def parse_args() -> argparse.Namespace:
 def _run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
     """
     Runs fetch_one(item) for each item, tolerating per-metric insight failures.
-    
+
     On InsightMetricError, keeps the item's partial_result (every metric that DID
     succeed) instead of discarding its insights entirely, logs the specific metric(s)
     that failed, and tallies them for one consolidated summary line at the end instead
@@ -113,13 +112,13 @@ def _run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
             items: items can be either Post or Video objects.
             fetch_one: is a callable from the client boject, that fetches insights for the ids passed, such as
                 client.get_video_insight, client.get_post_insight
-            get_id: gets a string ID 
+            get_id: gets a string ID
             label: video or post id
 
 
-        RETURNS  
+        RETURNS
             A list of insights, specified by the function passed to fetch_one. Can be partial results if an
-                insight failes for certain Post or Video objects. 
+                insight failes for certain Post or Video objects.
 
 
     """
@@ -166,14 +165,19 @@ def main() -> None:
     logger.info("Fetching page info...")
     try:
         page = client.get_page(page_id)
-    except requests.exceptions.RequestException as e: 
+    except requests.exceptions.RequestException as e:
         logger.error("Failed to fetch page info: %s", e)
         page = None
 
-
-        
     if page is not None:
-        upload_partitioned(page_info_to_arrow(page), "facebook_page_info", PAGE_INFO_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+        upload_partitioned(
+            page_info_to_arrow(page),
+            "facebook_page_info",
+            PAGE_INFO_SCHEMA,
+            args.dataset,
+            target_date,
+            ingestion_timestamp,
+        )
     else:
         logger.warning("Skipping facebook_page_info upload due to fetch failure")
 
@@ -198,18 +202,46 @@ def main() -> None:
             logger.error("Post pagination failed: %s", e)
             posts = e.partial_result
         logger.info("Found %d posts", len(posts))
-        upload_partitioned(posts_to_arrow(posts), "facebook_posts", POSTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+        upload_partitioned(
+            posts_to_arrow(posts), "facebook_posts", POSTS_SCHEMA, args.dataset, target_date, ingestion_timestamp
+        )
 
         if args.run_post_insights:
             logger.info("Fetching insights for %d posts...", len(posts))
-            posts_with_insights = _run_insight_fetch(
-                posts, client.get_post_insights, lambda p: p.post_id, "Post"
-            )
+            posts_with_insights = _run_insight_fetch(posts, client.get_post_insights, lambda p: p.post_id, "Post")
 
-            upload_partitioned(post_insights_to_arrow(posts_with_insights), "facebook_post_insights", POST_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            upload_partitioned(post_reactions_to_arrow(posts_with_insights), "facebook_post_reactions", POST_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            upload_partitioned(post_activity_to_arrow(posts_with_insights), "facebook_post_activity", POST_ACTIVITY_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            upload_partitioned(post_clicks_by_type_to_arrow(posts_with_insights), "facebook_post_clicks_by_type", POST_CLICKS_BY_TYPE_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(
+                post_insights_to_arrow(posts_with_insights),
+                "facebook_post_insights",
+                POST_INSIGHTS_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
+            upload_partitioned(
+                post_reactions_to_arrow(posts_with_insights),
+                "facebook_post_reactions",
+                POST_REACTIONS_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
+            upload_partitioned(
+                post_activity_to_arrow(posts_with_insights),
+                "facebook_post_activity",
+                POST_ACTIVITY_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
+            upload_partitioned(
+                post_clicks_by_type_to_arrow(posts_with_insights),
+                "facebook_post_clicks_by_type",
+                POST_CLICKS_BY_TYPE_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
         else:
             logger.info("Skipping post insights (--no-run-post-insights)")
     else:
@@ -224,18 +256,46 @@ def main() -> None:
             logger.error("Video pagination failed: %s", e)
             videos = e.partial_result
         logger.info("Found %d videos", len(videos))
-        upload_partitioned(videos_to_arrow(videos), "facebook_videos", VIDEOS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+        upload_partitioned(
+            videos_to_arrow(videos), "facebook_videos", VIDEOS_SCHEMA, args.dataset, target_date, ingestion_timestamp
+        )
 
         if args.run_video_insights:
             logger.info("Fetching insights for %d videos...", len(videos))
-            videos_with_insights = _run_insight_fetch(
-                videos, client.get_video_insights, lambda v: v.video_id, "Video"
-            )
+            videos_with_insights = _run_insight_fetch(videos, client.get_video_insights, lambda v: v.video_id, "Video")
 
-            upload_partitioned(video_insights_to_arrow(videos_with_insights), "facebook_video_insights", VIDEO_INSIGHTS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            upload_partitioned(video_reel_reactions_to_arrow(videos_with_insights), "facebook_video_reel_reactions", VIDEO_REEL_REACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            upload_partitioned(video_reel_social_actions_to_arrow(videos_with_insights), "facebook_video_reel_social_actions", VIDEO_REEL_SOCIAL_ACTIONS_SCHEMA, args.dataset, target_date, ingestion_timestamp)
-            upload_partitioned(video_reel_retention_to_arrow(videos_with_insights), "facebook_video_reel_retention", VIDEO_REEL_RETENTION_SCHEMA, args.dataset, target_date, ingestion_timestamp)
+            upload_partitioned(
+                video_insights_to_arrow(videos_with_insights),
+                "facebook_video_insights",
+                VIDEO_INSIGHTS_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
+            upload_partitioned(
+                video_reel_reactions_to_arrow(videos_with_insights),
+                "facebook_video_reel_reactions",
+                VIDEO_REEL_REACTIONS_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
+            upload_partitioned(
+                video_reel_social_actions_to_arrow(videos_with_insights),
+                "facebook_video_reel_social_actions",
+                VIDEO_REEL_SOCIAL_ACTIONS_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
+            upload_partitioned(
+                video_reel_retention_to_arrow(videos_with_insights),
+                "facebook_video_reel_retention",
+                VIDEO_REEL_RETENTION_SCHEMA,
+                args.dataset,
+                target_date,
+                ingestion_timestamp,
+            )
         else:
             logger.info("Skipping video insights (--no-run-video-insights)")
     else:
@@ -248,4 +308,3 @@ if __name__ == "__main__":
     except Exception:
         logger.exception("Pipeline failed")
         raise
- 

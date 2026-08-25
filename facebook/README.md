@@ -41,22 +41,22 @@ Auth utilities (`FileTokenCache`, `get_gcp_secret`) are shared with the YouTube 
 
 
 
-## generating long lived page tokens 
+## generating long lived page tokens
 Useful guide - https://docs.squiz.net/funnelback/docs/latest/build/data-sources/facebook/facebook-page-access-token.html
 
-You need to set up a facebook bussines App, i've created a video in the social medial shared drive -> social media data ingestion 
+You need to set up a facebook bussines App, i've created a video in the social medial shared drive -> social media data ingestion
 
-1) We generate a short term access token in the facebook graph api explorer tool using our business app. 
-2) We then exchange that for a long term access token 
-3) We use that long term access token to create a supposidly permiment page token.(There seems to be online debate, 
-my page token expired after a month but I wasnt using it much).  
+1) We generate a short term access token in the facebook graph api explorer tool using our business app.
+2) We then exchange that for a long term access token
+3) We use that long term access token to create a supposidly permiment page token.(There seems to be online debate,
+my page token expired after a month but I wasnt using it much).
 
 
 ### Step 1 - Short lived with explorer tool
 1) Generate a short lived user access token with the correct permissions
 
-  i) You can use the page access token generated explorer tool or cli by the gouvk-social-f-b-app-bus 
-  ii) ensure it has permissions: 
+  i) You can use the page access token generated explorer tool or cli by the gouvk-social-f-b-app-bus
+  ii) ensure it has permissions:
     pages_show_list
     business_management
     attribution_read
@@ -65,31 +65,31 @@ my page token expired after a month but I wasnt using it much).
     pages_manage_engagement
 
 ### step 2 - long lived with bash sciprt  -https://developers.facebook.com/documentation/facebook-login/guides/access-tokens/get-long-lived
-2) Use that short lived user access token to create a long lived access token 
+2) Use that short lived user access token to create a long lived access token
 
-Use can use gcloud to get secret values 
+Use can use gcloud to get secret values
 ```
 app_id=$(gcloud secrets versions access latest --secret="facebook_app_id") \
 app_secret=$(gcloud secrets versions access latest --secret="facebook_app_secret") \
 short_lived_access_token="<the_token_you_generated_with_tool>"
 ```
 
-Just go the explorer tool -> 
-i) Explore tooltools drop down 
-ii) debug access token 
-iii) insert short term access token 
-iv) click "extend access token" to get long_term_access token 
+Just go the explorer tool ->
+i) Explore tooltools drop down
+ii) debug access token
+iii) insert short term access token
+iv) click "extend access token" to get long_term_access token
 
-I've also done it with the cli in the past 
+I've also done it with the cli in the past
 
 i) curl -i -X GET "https://graph.facebook.com/v25.0/oauth/access_token?
     grant_type=fb_exchange_token&
     client_id={$app-id}&
     client_secret={$app-secret}&
     fb_exchange_token={$short_lived_access_token}"
-  
+
 ### Step 3 - perm page access token
-i) note the app scoped user id 
+i) note the app scoped user id
 ii) add new app_scopred_user_id and long_term_access_token to https://graph.facebook.com/v12.0/APP-SCOPED-USER-ID/accounts?access_token=LONG-LIVED-ACCESS-TOKEN
 iii) this will return your perm page token, which if you put back into the debugger shows "Expires:Never"
 iv) upload this value to be the new gcp secret facebook_page_token
@@ -168,11 +168,11 @@ poetry run pytest tests/test_facebook.py tests/test_facebook_http.py -m integrat
 # to create a report outlining test coverage using pytest-cov use the --cov and --cov-report
 poetry run pytest tests/test_facebook.py -m "not integration" -x -q --cov=facebook --cov-report=term-missing
 
-# or with markdown for github actions 
+# or with markdown for github actions
 poetry run pytest tests/test_facebook.py -m "not integration" -x -q --cov=facebook --cov=src --cov-report=term-missing --cov-report=markdown
 
-# to output as part of github actions 
-https://github.com/marketplace/actions/python-coverage 
+# to output as part of github actions
+https://github.com/marketplace/actions/python-coverage
 https://github.com/marketplace/actions/pytest-coverage-comment -- this seems the most useful
 https://chinsj.medium.com/continuous-integration-with-github-actions-using-poetry-pylint-and-pytest-with-coverage-check-857f4174e4f7
 
@@ -362,4 +362,3 @@ It will always return the most recent objects, regards of query modifiers you em
 
 ### Differences between Video and reel video_insights
 - https://developers.facebook.com/docs/graph-api/reference/video/video_insights/#metrics
-

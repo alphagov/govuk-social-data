@@ -146,7 +146,14 @@ def test_http_posts_edge(_http):
     assert "data" in data
     assert len(data["data"]) > 0, "Expected at least one post"
     post = data["data"][0]
-    for alias in ("like_reactions", "love_reactions", "wow_reactions", "haha_reactions", "sad_reactions", "angry_reactions"):
+    for alias in (
+        "like_reactions",
+        "love_reactions",
+        "wow_reactions",
+        "haha_reactions",
+        "sad_reactions",
+        "angry_reactions",
+    ):
         assert alias in post, f"Expected '{alias}' field in post response"
         assert "summary" in post[alias], f"Expected 'summary' in '{alias}'"
         assert "total_count" in post[alias]["summary"], f"Expected 'total_count' in '{alias}.summary'"

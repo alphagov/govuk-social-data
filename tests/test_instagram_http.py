@@ -170,7 +170,10 @@ def test_http_ig_media_edge(_http):
         f"{_http['ig_user_id']}/media",
         _http["token"],
         {
-            "fields": "id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count,comments_count",
+            "fields": (
+                "id,caption,media_type,media_product_type,permalink,"
+                "thumbnail_url,media_url,timestamp,like_count,comments_count"
+            ),
             "limit": "10",
         },
     )

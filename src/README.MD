@@ -32,7 +32,7 @@ poetry run python -m src.main --refresh-youtube-ids-and-metadata --full-dataset
 # Run only periodic reports for a custom date range
 poetry run python src.main --no-run-daily-reports --run-periodic-reports --start-date 2025-01-01 --end-date 2026-01-01
 
-# run only a small sample of tests 
+# run only a small sample of tests
  poetry run python -m  src.main  --no-run-periodic-reports --no-refresh-youtube-ids-and-metadata --no-full-dataset  --start-date 2026-02-01 --end-date 2026-02-01
 ```
 

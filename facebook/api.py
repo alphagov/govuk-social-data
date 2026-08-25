@@ -1,9 +1,9 @@
 """
 The purpose of this API file is to access the endpoints of the facebook graph API, which are structued via the node,
-edge attribute structured. 
+edge attribute structured.
 
 
-The rough call structure is 
+The rough call structure is
 
 Facebook client - (account Node)
 |
@@ -16,7 +16,7 @@ Facebook client - (account Node)
 |-- get_post_insights    _fetch_insight_items    _get
 
 
-Graph structure 
+Graph structure
 
 Node    Edge            Node        Edge
 - Page
@@ -24,11 +24,11 @@ Node    Edge            Node        Edge
         - posts         -Video      - insights
         - insights
 """
+
 from http import HTTPStatus
 import json
 import logging
 import time
-from datetime import datetime
 
 import requests
 from requests.exceptions import HTTPError
@@ -114,14 +114,8 @@ VIDEO_DICT_METRICS = [
 ]
 VIDEO_METRICS = VIDEO_SCALAR_METRICS + VIDEO_DICT_METRICS
 
-# video_reels object 
-REEL_SCALAR_METRICS = {
-    "video_id", 
-    "upload_url", 
-    "success", 
-    "message", 
-    "post_id" 
-}
+# video_reels object
+REEL_SCALAR_METRICS = {"video_id", "upload_url", "success", "message", "post_id"}
 
 REEL_DICT_METRICS = {}
 
@@ -222,11 +216,10 @@ class FacebookClient:
 
         raise last_exception
 
-
     def _paginate(
         self, path: str, params: dict | None = None, max_results: int | None = None, raise_on_failure: bool = False
     ) -> list[dict]:
-        '''
+        """
 
         Given a target path and params, will query the endpoint which returns an object with paging and data
         objects.
@@ -268,37 +261,37 @@ class FacebookClient:
 
 
         On failure of a single ID the logger raises a warning and
-        '''
+        """
         results: list[dict] = []
         causes: list[dict] = []
         try:
             paging_json_object = self._get(path, params)  # Returns the json containing data and paging objects
-            results.extend(paging_json_object.get("data", [])) # gets the data object for the first object
+            results.extend(paging_json_object.get("data", []))  # gets the data object for the first object
             logger.debug(f"Data retrieved from endpoint {path} with params {params}")
             # if we have a bad endpoint do we end the run completely?
         except Exception as e:
             logger.warning(f"Failed to return endpoint {path} with params {params}, error {e}")
-            causes.append({'exception':e, 'path':path, 'params':params})
+            causes.append({"exception": e, "path": path, "params": params})
             if raise_on_failure:
                 raise PaginationError(path, params, causes, results)
             return results
 
         while max_results is None or len(results) < max_results:
-            paging = paging_json_object.get("paging", {})   # returns paging object, which contains the cursor
-            after_cursor = paging.get("cursors", {}).get("after") # gets the next object hash, is it possible
+            paging = paging_json_object.get("paging", {})  # returns paging object, which contains the cursor
+            after_cursor = paging.get("cursors", {}).get("after")  # gets the next object hash, is it possible
             if not after_cursor or not paging.get("next"):
                 break
             try:
                 paging_json_object = self._get(path, {**(params or {}), "after": after_cursor})
             except Exception as e:
                 logger.warning(
-                                "Pagination failed for %s after %d result(s); stopping early: %s", path, len(results), e
-                            )
-                causes.append({'exception':e, 'path':path, 'params':params})
+                    "Pagination failed for %s after %d result(s); stopping early: %s", path, len(results), e
+                )
+                causes.append({"exception": e, "path": path, "params": params})
                 if raise_on_failure:
                     raise PaginationError(path, params, causes, results)
                 break
-            results.extend(paging_json_object.get("data",[]))
+            results.extend(paging_json_object.get("data", []))
 
         return results[:max_results] if max_results is not None else results
 
@@ -403,11 +396,11 @@ class FacebookClient:
             if attachments:
                 post_type = attachments[0].get("type", "status")
             reactions = {
-                "LIKE":  raw.get("like_reactions",  {}).get("summary", {}).get("total_count", 0),
-                "LOVE":  raw.get("love_reactions",  {}).get("summary", {}).get("total_count", 0),
-                "WOW":   raw.get("wow_reactions",   {}).get("summary", {}).get("total_count", 0),
-                "HAHA":  raw.get("haha_reactions",  {}).get("summary", {}).get("total_count", 0),
-                "SAD":   raw.get("sad_reactions",   {}).get("summary", {}).get("total_count", 0),
+                "LIKE": raw.get("like_reactions", {}).get("summary", {}).get("total_count", 0),
+                "LOVE": raw.get("love_reactions", {}).get("summary", {}).get("total_count", 0),
+                "WOW": raw.get("wow_reactions", {}).get("summary", {}).get("total_count", 0),
+                "HAHA": raw.get("haha_reactions", {}).get("summary", {}).get("total_count", 0),
+                "SAD": raw.get("sad_reactions", {}).get("summary", {}).get("total_count", 0),
                 "ANGRY": raw.get("angry_reactions", {}).get("summary", {}).get("total_count", 0),
             }
             posts.append(
@@ -424,9 +417,7 @@ class FacebookClient:
         return posts
 
     def get_posts(self, page_id: str, limit: int | None = None, max_results: int | None = None) -> list[Post]:
-        params: dict = {
-            "fields": f"id,message,created_time,permalink_url,attachments{{type}},{_REACTION_FIELDS}"
-        }
+        params: dict = {"fields": f"id,message,created_time,permalink_url,attachments{{type}},{_REACTION_FIELDS}"}
         if limit is not None:
             params["limit"] = limit
         try:

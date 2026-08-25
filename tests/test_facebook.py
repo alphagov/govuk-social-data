@@ -18,7 +18,15 @@ from facebook.api import (
     VIDEO_METRICS,
     VIDEO_SCALAR_METRICS,
 )
-from facebook.models import FacebookReelInsights, Page, PageInsightMetric, PageInsightValue, Post, PostInsightMetric, Video
+from facebook.models import (
+    FacebookReelInsights,
+    Page,
+    PageInsightMetric,
+    PageInsightValue,
+    Post,
+    PostInsightMetric,
+    Video,
+)
 from facebook.schemas import (
     PAGE_INFO_SCHEMA,
     PAGE_INSIGHTS_SCHEMA,
@@ -290,9 +298,7 @@ def _make_fake_get(metric_names: list[str], failing_metric: str):
         metric = params["metric"]
         if metric in (joined, failing_metric):
             raise _http_error(400)
-        return {
-            "data": [{"name": metric, "period": "lifetime", "values": [{"value": _fake_metric_value(metric)}]}]
-        }
+        return {"data": [{"name": metric, "period": "lifetime", "values": [{"value": _fake_metric_value(metric)}]}]}
 
     return fake_get
 
@@ -312,9 +318,7 @@ def test_fetch_insight_items_raises_with_specific_metric(monkeypatch):
     monkeypatch.setattr(client, "_get", _make_fake_get(POST_METRICS, "post_clicks"))
 
     with pytest.raises(InsightMetricError) as exc_info:
-        client._fetch_insight_items(
-            f"{POST_ID}/insights", POST_METRICS, {"period": "lifetime"}, raise_on_failure=True
-        )
+        client._fetch_insight_items(f"{POST_ID}/insights", POST_METRICS, {"period": "lifetime"}, raise_on_failure=True)
 
     err = exc_info.value
     assert err.metrics == ["post_clicks"]
@@ -423,6 +427,7 @@ def _first_video_with_insights(_fb):
         if insights is not None and any(getattr(insights, f) is not None for f in FacebookReelInsights.model_fields):
             return result
     pytest.skip("No video with populated insights found in the most recent 10 videos")
+
 
 # ------------------------------------------------------------------
 # Basic client / node / edge tests

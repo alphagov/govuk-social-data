@@ -3,7 +3,7 @@ import pyarrow as pa
 from facebook.api import VIDEO_SCALAR_METRICS
 from facebook.models import Page, PageInsightMetric, Post, Video
 
-## This file contains the schema objects for the pyarrow upload to bq
+# This file contains the schema objects for the pyarrow upload to bq
 
 PAGE_INFO_SCHEMA: dict[str, pa.DataType] = {
     "page_id": pa.string(),
@@ -155,7 +155,8 @@ def post_insights_to_arrow(posts: list[Post]) -> pa.Table:
             rows["value"].append(insight.value)
     return _cast_table(rows, POST_INSIGHTS_SCHEMA)
 
-# toadd 
+
+# toadd
 def videos_to_arrow(videos: list[Video]) -> pa.Table:
     rows: dict[str, list] = {k: [] for k in VIDEOS_SCHEMA}
     for video in videos:
