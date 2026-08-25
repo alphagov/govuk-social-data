@@ -31,9 +31,12 @@ htmlcov/
 #Claude
 claude.md
 
-# coverage 
+# coverage
 coverage.*
 .coverage
 
-# logs 
+# logs
 *.log
+
+# terraform
+*.tfvars
