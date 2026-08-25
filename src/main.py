@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import io
 import json
 import logging
 import re
@@ -11,10 +10,8 @@ from typing import Any, Callable
 
 import googleapiclient.discovery
 import pyarrow as pa
-import pyarrow.parquet as pq
 from google.auth import exceptions as auth_exceptions
 from google.auth.transport.requests import Request
-from google.cloud import bigquery
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource
 
@@ -190,8 +187,8 @@ def get_user_activity_by_country_single_video_config(video_id: str) -> dict[str,
     """Returns the configuration for retrieving user activity metrics broken down by country
     for a single video. Uses the "User activity by country" report (dimensions: country), which
     has no day/month dimension the response is aggregated over the given start/end date range,
-    so callers must use a single-day range (startDate == endDate) to get a daily breakdown. 
-    This will mean that we can no longer call on multiple days, as we do not have the day dimension """
+    so callers must use a single-day range (startDate == endDate) to get a daily breakdown.
+    This will mean that we can no longer call on multiple days, as we do not have the day dimension"""
     return {
         "dimensions": "country",
         "metrics": (
@@ -727,6 +724,7 @@ def _iso8601_duration_to_seconds(duration: str) -> int | None:
     h, m, s = (int(x or 0) for x in match.groups())
     return h * 3600 + m * 60 + s
 
+
 def _run_report(
     youtube_service: Resource,
     video_ids: list[str],
@@ -912,6 +910,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--end-date", default="2025-01-08", help="End date for queries in YYYY-MM-DD format (default: 2025-01-08)"
     )
+    parser.add_argument(
+        "--dataset",
+        default="govuk_youtube_channel_staging",
+        help="BigQuery target dataset (default: govuk_youtube_channel_staging). "
+        "Ignored when --no-full-dataset is set, which always writes to the testing dataset.",
+    )
     return parser.parse_args()
 
 
@@ -925,6 +929,7 @@ def main() -> None:
     RUN_PERIODIC_REPORTS = args.run_periodic_reports
     START_DATE = args.start_date
     END_DATE = args.end_date
+    DATASET = args.dataset
 
     if RUN_DAILY_REPORTS and START_DATE != END_DATE:
         raise ValueError(
@@ -933,8 +938,7 @@ def main() -> None:
         )
 
     TEST_DATASET = "govuk_youtube_channel_testing"
-    STAGING_DATASSET = "govuk_youtube_channel_staging"
-    TARGET_DATASET = STAGING_DATASSET
+    TARGET_DATASET = DATASET
 
     try:
         youtube_analytics_service = get_youtube_analytics_api_v2_service()
@@ -971,7 +975,7 @@ def main() -> None:
             youtube_ids_with_metadata_mapping_table = retrieve_data_from_bq(
                 PROJECT_ID, TARGET_DATASET, "video_id_metadata_mapping"
             )
-            TARGET_DATASET = STAGING_DATASSET
+            TARGET_DATASET = DATASET
         else:
             logger.info(
                 "Using hardcoded sample video IDs. Set --full-dataset to True to read video IDs from BigQuery."
