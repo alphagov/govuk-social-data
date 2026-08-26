@@ -119,10 +119,7 @@ def run_daily(client, threads_user_id: str, args, partition_date: date, ingestio
         ingestion_timestamp,
     )
 
-
-def run_snapshot(client, threads_user_id: str, args, partition_date: date, ingestion_timestamp: datetime) -> None:
-    """Everything the API only reports as of now, written into the partition for today."""
-    # Profile
+def upload_profile(client, threads_user_id, PROFILE_SCHEMA, args, partition_date, ingestion_timestamp):
     logger.info("Fetching profile...")
     profile = client.get_profile(threads_user_id)
     upload_partitioned(
@@ -131,9 +128,10 @@ def run_snapshot(client, threads_user_id: str, args, partition_date: date, inges
         PROFILE_SCHEMA,
         args.dataset,
         partition_date,
-        ingestion_timestamp,
+        ingestion_timestamp
     )
 
+def upload_media(client, threads_user_id, MEDIA_SCHEMA, args, partition_date, ingestion_timestamp,):
     # Posts
     logger.info("Fetching posts%s...", f" (limit {args.media_limit})" if args.media_limit else "")
     try:
@@ -142,30 +140,42 @@ def run_snapshot(client, threads_user_id: str, args, partition_date: date, inges
         logger.error("Media pagination failed: %s", e)
         media = e.partial_result
     logger.info("Found %d posts", len(media))
-    upload_partitioned(
-        media_to_arrow(threads_user_id, media),
-        "threads_media",
-        MEDIA_SCHEMA,
-        args.dataset,
-        partition_date,
-        ingestion_timestamp,
-    )
-
-    # Post insights
     if args.run_media_insights:
-        logger.info("Fetching insights for %d posts...", len(media))
-        media_with_insights = run_insight_fetch(media, client.get_media_insights, lambda m: m.id, "Media")
+            logger.info("Fetching insights for %d posts...", len(media))
+            media_with_insights = run_insight_fetch(media, client.get_media_insights, lambda m: m.id, "Media")
+            upload_partitioned(
+                media_to_arrow(threads_user_id,media_with_insights),
+                "threads_media_insights",
+                MEDIA_SCHEMA,
+                args.dataset,
+                partition_date,
+                ingestion_timestamp,
+            )
+    else:
+        logger.info("Skipping post insights (--no-run-media-insights)")
+
+def upload_insights(client, threads_user_id, MEDIA_INSIGHTS_SCHEMA, args, partition_date, ingestion_timestamp):
+    try:
+        media = client.get_media(threads_user_id, max_results=args.media_limit)
+    except PaginationError as e:
+        logger.error("Media pagination failed: %s", e)
+        media = e.partial_result
+    logger.info("Fetching insights for %d posts...", len(media))
+    media_with_insights = run_insight_fetch(media, client.get_media_insights, lambda m: m.id, "Media")
+    if media_with_insights:
         upload_partitioned(
-            media_insights_to_arrow(media_with_insights),
-            "threads_media_insights",
+            media_insights_to_arrow(threads_user_id),
+            "threads_profile",
             MEDIA_INSIGHTS_SCHEMA,
             args.dataset,
             partition_date,
-            ingestion_timestamp,
+            ingestion_timestamp
         )
     else:
         logger.info("Skipping post insights (--no-run-media-insights)")
 
+
+def upload_replies(client, threads_user_id, replies_schema, args, partition_date, ingestion_timestamp):
     # Replies
     if args.run_replies:
         logger.info("Fetching replies%s...", f" (limit {args.reply_limit})" if args.reply_limit else "")
@@ -178,7 +188,7 @@ def run_snapshot(client, threads_user_id: str, args, partition_date: date, inges
         upload_partitioned(
             replies_to_arrow(threads_user_id, replies),
             "threads_replies",
-            REPLIES_SCHEMA,
+            replies_schema,
             args.dataset,
             partition_date,
             ingestion_timestamp,
@@ -186,7 +196,7 @@ def run_snapshot(client, threads_user_id: str, args, partition_date: date, inges
     else:
         logger.info("Skipping replies (--no-run-replies)")
 
-    # Lifetime account metrics
+def upload_lifetime(client, threads_user_id, account_lifetime_schema, args, partition_date, ingestion_timestamp):
     logger.info("Fetching lifetime account metrics...")
     try:
         lifetime = client.get_account_lifetime_insights(threads_user_id)
@@ -196,11 +206,93 @@ def run_snapshot(client, threads_user_id: str, args, partition_date: date, inges
     upload_partitioned(
         account_lifetime_to_arrow(threads_user_id, lifetime),
         "threads_account_lifetime",
-        ACCOUNT_LIFETIME_SCHEMA,
+        account_lifetime_schema,
         args.dataset,
         partition_date,
         ingestion_timestamp,
     )
+
+def upload_demographics(client, threads_user_id, follower_demographics_schema, args, partition_date, ingestion_timestamp):
+    if args.run_demographics:
+        logger.info("Fetching follower demographics...")
+        demographics = client.get_follower_demographics(threads_user_id)
+        logger.info("Found %d demographic rows", len(demographics))
+        upload_partitioned(
+            follower_demographics_to_arrow(threads_user_id, demographics),
+            "threads_follower_demographics",
+            follower_demographics_schema,
+            args.dataset,
+            partition_date,
+            ingestion_timestamp,
+        )
+    else:
+        logger.info("Skipping follower demographics (--no-run-demographics)")
+
+def run_snapshot(client, threads_user_id: str, args, partition_date: date, ingestion_timestamp: datetime) -> None:
+    """Everything the API only reports as of now, written into the partition for today."""
+
+    steps = {
+        "profile": lambda: upload_profile(
+            client,
+            threads_user_id,
+            PROFILE_SCHEMA,
+            args,
+            partition_date,
+            ingestion_timestamp),
+        "posts": lambda: upload_media(
+            client,
+            threads_user_id,
+            MEDIA_SCHEMA,
+            args,
+            partition_date,
+            ingestion_timestamp,
+        ),
+        "posts_insights": lambda:upload_insights(
+            client,
+            threads_user_id,
+            MEDIA_INSIGHTS_SCHEMA,
+            args,
+            partition_date,
+            ingestion_timestamp),
+        "replies": lambda: upload_replies(
+            client,
+            threads_user_id,
+            REPLIES_SCHEMA,
+            args,
+            partition_date,
+            ingestion_timestamp,
+        ),
+        "lifetime_metrics": lambda: upload_partitioned(
+            client, 
+            threads_user_id,
+            ACCOUNT_LIFETIME_SCHEMA,
+            args,
+            partition_date,
+            ingestion_timestamp,
+    ),
+        "demographics": lambda: upload_partitioned(
+            client,
+            threads_user_id,
+            FOLLOWER_DEMOGRAPHICS_SCHEMA,
+            args,
+            partition_date,
+            ingestion_timestamp,
+        ),
+
+    }
+
+    failed = []
+    for name, step in steps.items():
+        try:
+            step()
+        except Exception as e: 
+            logger.error(f"error message for step {name}")
+            failed.append(name)
+
+    if failed:
+        logger.warning("Missing today's partitin for: %s", ", ".join(failed))
+
+
 
     # Follower demographics
     if args.run_demographics:
