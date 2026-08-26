@@ -119,7 +119,8 @@ def run_daily(client, threads_user_id: str, args, partition_date: date, ingestio
         ingestion_timestamp,
     )
 
-def upload_profile(client, threads_user_id, PROFILE_SCHEMA, args, partition_date, ingestion_timestamp):
+
+def _upload_profile(client, threads_user_id, args, partition_date, ingestion_timestamp) -> None:
     logger.info("Fetching profile...")
     profile = client.get_profile(threads_user_id)
     upload_partitioned(
@@ -128,11 +129,11 @@ def upload_profile(client, threads_user_id, PROFILE_SCHEMA, args, partition_date
         PROFILE_SCHEMA,
         args.dataset,
         partition_date,
-        ingestion_timestamp
+        ingestion_timestamp,
     )
 
-def upload_media(client, threads_user_id, MEDIA_SCHEMA, args, partition_date, ingestion_timestamp,):
-    # Posts
+
+def _upload_media(client, threads_user_id, args, partition_date, ingestion_timestamp, state) -> None:
     logger.info("Fetching posts%s...", f" (limit {args.media_limit})" if args.media_limit else "")
     try:
         media = client.get_media(threads_user_id, max_results=args.media_limit)
@@ -140,63 +141,60 @@ def upload_media(client, threads_user_id, MEDIA_SCHEMA, args, partition_date, in
         logger.error("Media pagination failed: %s", e)
         media = e.partial_result
     logger.info("Found %d posts", len(media))
-    if args.run_media_insights:
-            logger.info("Fetching insights for %d posts...", len(media))
-            media_with_insights = run_insight_fetch(media, client.get_media_insights, lambda m: m.id, "Media")
-            upload_partitioned(
-                media_to_arrow(threads_user_id,media_with_insights),
-                "threads_media_insights",
-                MEDIA_SCHEMA,
-                args.dataset,
-                partition_date,
-                ingestion_timestamp,
-            )
-    else:
-        logger.info("Skipping post insights (--no-run-media-insights)")
+    # Cached before the upload, not after: get_media is the most expensive call in the mode, and the
+    # insights step still has everything it needs even if this table fails to load.
+    state["media"] = media
+    upload_partitioned(
+        media_to_arrow(threads_user_id, media),
+        "threads_media",
+        MEDIA_SCHEMA,
+        args.dataset,
+        partition_date,
+        ingestion_timestamp,
+    )
 
-def upload_insights(client, threads_user_id, MEDIA_INSIGHTS_SCHEMA, args, partition_date, ingestion_timestamp):
-    try:
-        media = client.get_media(threads_user_id, max_results=args.media_limit)
-    except PaginationError as e:
-        logger.error("Media pagination failed: %s", e)
-        media = e.partial_result
+
+def _upload_media_insights(client, args, partition_date, ingestion_timestamp, state) -> None:
+    if not args.run_media_insights:
+        logger.info("Skipping post insights (--no-run-media-insights)")
+        return
+    media = state.get("media")
+    if media is None:
+        raise RuntimeError("posts step did not complete, so there are no posts to fetch insights for")
     logger.info("Fetching insights for %d posts...", len(media))
     media_with_insights = run_insight_fetch(media, client.get_media_insights, lambda m: m.id, "Media")
-    if media_with_insights:
-        upload_partitioned(
-            media_insights_to_arrow(threads_user_id),
-            "threads_profile",
-            MEDIA_INSIGHTS_SCHEMA,
-            args.dataset,
-            partition_date,
-            ingestion_timestamp
-        )
-    else:
-        logger.info("Skipping post insights (--no-run-media-insights)")
+    upload_partitioned(
+        media_insights_to_arrow(media_with_insights),
+        "threads_media_insights",
+        MEDIA_INSIGHTS_SCHEMA,
+        args.dataset,
+        partition_date,
+        ingestion_timestamp,
+    )
 
 
-def upload_replies(client, threads_user_id, replies_schema, args, partition_date, ingestion_timestamp):
-    # Replies
-    if args.run_replies:
-        logger.info("Fetching replies%s...", f" (limit {args.reply_limit})" if args.reply_limit else "")
-        try:
-            replies = client.get_replies(threads_user_id, max_results=args.reply_limit)
-        except PaginationError as e:
-            logger.error("Reply pagination failed: %s", e)
-            replies = e.partial_result
-        logger.info("Found %d replies", len(replies))
-        upload_partitioned(
-            replies_to_arrow(threads_user_id, replies),
-            "threads_replies",
-            replies_schema,
-            args.dataset,
-            partition_date,
-            ingestion_timestamp,
-        )
-    else:
+def _upload_replies(client, threads_user_id, args, partition_date, ingestion_timestamp) -> None:
+    if not args.run_replies:
         logger.info("Skipping replies (--no-run-replies)")
+        return
+    logger.info("Fetching replies%s...", f" (limit {args.reply_limit})" if args.reply_limit else "")
+    try:
+        replies = client.get_replies(threads_user_id, max_results=args.reply_limit)
+    except PaginationError as e:
+        logger.error("Reply pagination failed: %s", e)
+        replies = e.partial_result
+    logger.info("Found %d replies", len(replies))
+    upload_partitioned(
+        replies_to_arrow(threads_user_id, replies),
+        "threads_replies",
+        REPLIES_SCHEMA,
+        args.dataset,
+        partition_date,
+        ingestion_timestamp,
+    )
 
-def upload_lifetime(client, threads_user_id, account_lifetime_schema, args, partition_date, ingestion_timestamp):
+
+def _upload_account_lifetime(client, threads_user_id, args, partition_date, ingestion_timestamp) -> None:
     logger.info("Fetching lifetime account metrics...")
     try:
         lifetime = client.get_account_lifetime_insights(threads_user_id)
@@ -206,109 +204,67 @@ def upload_lifetime(client, threads_user_id, account_lifetime_schema, args, part
     upload_partitioned(
         account_lifetime_to_arrow(threads_user_id, lifetime),
         "threads_account_lifetime",
-        account_lifetime_schema,
+        ACCOUNT_LIFETIME_SCHEMA,
         args.dataset,
         partition_date,
         ingestion_timestamp,
     )
 
-def upload_demographics(client, threads_user_id, follower_demographics_schema, args, partition_date, ingestion_timestamp):
-    if args.run_demographics:
-        logger.info("Fetching follower demographics...")
-        demographics = client.get_follower_demographics(threads_user_id)
-        logger.info("Found %d demographic rows", len(demographics))
-        upload_partitioned(
-            follower_demographics_to_arrow(threads_user_id, demographics),
-            "threads_follower_demographics",
-            follower_demographics_schema,
-            args.dataset,
-            partition_date,
-            ingestion_timestamp,
-        )
-    else:
+
+def _upload_demographics(client, threads_user_id, args, partition_date, ingestion_timestamp) -> None:
+    if not args.run_demographics:
         logger.info("Skipping follower demographics (--no-run-demographics)")
+        return
+    logger.info("Fetching follower demographics...")
+    demographics = client.get_follower_demographics(threads_user_id)
+    logger.info("Found %d demographic rows", len(demographics))
+    upload_partitioned(
+        follower_demographics_to_arrow(threads_user_id, demographics),
+        "threads_follower_demographics",
+        FOLLOWER_DEMOGRAPHICS_SCHEMA,
+        args.dataset,
+        partition_date,
+        ingestion_timestamp,
+    )
 
-def run_snapshot(client, threads_user_id: str, args, partition_date: date, ingestion_timestamp: datetime) -> None:
-    """Everything the API only reports as of now, written into the partition for today."""
 
+def run_snapshot(client, threads_user_id: str, args, partition_date: date, ingestion_timestamp: datetime) -> list[str]:
+    """Everything the API only reports as of now, written into the partition for today.
+
+    One step per table so a failure names the table it lost. Every step runs regardless of what
+    failed before it, and the names of the failures are returned so main can exit non-zero: a
+    half-written snapshot must not look like a clean run to the orchestrator.
+    """
+    # Threaded through the media steps so get_media is paginated once rather than once per step.
+    state: dict = {}
     steps = {
-        "profile": lambda: upload_profile(
-            client,
-            threads_user_id,
-            PROFILE_SCHEMA,
-            args,
-            partition_date,
-            ingestion_timestamp),
-        "posts": lambda: upload_media(
-            client,
-            threads_user_id,
-            MEDIA_SCHEMA,
-            args,
-            partition_date,
-            ingestion_timestamp,
+        "profile": lambda: _upload_profile(client, threads_user_id, args, partition_date, ingestion_timestamp),
+        "media": lambda: _upload_media(client, threads_user_id, args, partition_date, ingestion_timestamp, state),
+        "media_insights": lambda: _upload_media_insights(
+            client, args, partition_date, ingestion_timestamp, state
         ),
-        "posts_insights": lambda:upload_insights(
-            client,
-            threads_user_id,
-            MEDIA_INSIGHTS_SCHEMA,
-            args,
-            partition_date,
-            ingestion_timestamp),
-        "replies": lambda: upload_replies(
-            client,
-            threads_user_id,
-            REPLIES_SCHEMA,
-            args,
-            partition_date,
-            ingestion_timestamp,
+        "replies": lambda: _upload_replies(client, threads_user_id, args, partition_date, ingestion_timestamp),
+        "account_lifetime": lambda: _upload_account_lifetime(
+            client, threads_user_id, args, partition_date, ingestion_timestamp
         ),
-        "lifetime_metrics": lambda: upload_partitioned(
-            client, 
-            threads_user_id,
-            ACCOUNT_LIFETIME_SCHEMA,
-            args,
-            partition_date,
-            ingestion_timestamp,
-    ),
-        "demographics": lambda: upload_partitioned(
-            client,
-            threads_user_id,
-            FOLLOWER_DEMOGRAPHICS_SCHEMA,
-            args,
-            partition_date,
-            ingestion_timestamp,
+        "demographics": lambda: _upload_demographics(
+            client, threads_user_id, args, partition_date, ingestion_timestamp
         ),
-
     }
 
     failed = []
     for name, step in steps.items():
         try:
             step()
-        except Exception as e: 
-            logger.error(f"error message for step {name}")
+        # Broad on purpose, unlike the narrow catches inside the steps: the point is to reach every
+        # remaining table. exc_info keeps the reason in the logs next to the step that lost it.
+        except Exception as e:
+            logger.error("Snapshot step %s failed: %s", name, e, exc_info=True)
             failed.append(name)
 
     if failed:
-        logger.warning("Missing today's partitin for: %s", ", ".join(failed))
-
-
-
-    # Follower demographics
-    if args.run_demographics:
-        logger.info("Fetching follower demographics...")
-        demographics = client.get_follower_demographics(threads_user_id)
-        logger.info("Found %d demographic rows", len(demographics))
-        upload_partitioned(
-            follower_demographics_to_arrow(threads_user_id, demographics),
-            "threads_follower_demographics",
-            FOLLOWER_DEMOGRAPHICS_SCHEMA,
-            args.dataset,
-            partition_date,
-            ingestion_timestamp,
-        )
-    else:
-        logger.info("Skipping follower demographics (--no-run-demographics)")
+        logger.warning("Missing today's partition for: %s", ", ".join(failed))
+    return failed
 
 
 def main() -> None:
@@ -331,7 +287,11 @@ def main() -> None:
     if args.mode == "daily":
         run_daily(client, threads_user_id, args, partition_date, ingestion_timestamp)
     else:
-        run_snapshot(client, threads_user_id, args, partition_date, ingestion_timestamp)
+        failed = run_snapshot(client, threads_user_id, args, partition_date, ingestion_timestamp)
+        # Every step has already run by this point. Exiting non-zero only tells the orchestrator that
+        # the partition is incomplete, so a dropped table cannot pass as a successful run.
+        if failed:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":
