@@ -17,9 +17,9 @@ with DAG(
     },
     tags=["social", "instagram"],
     params={
-        # Empty by default -> falls back to two calendar days before the run: ds is data_interval_start,
-        # which for a daily schedule is already the day before the run, and the template takes one more
-        # off. Override via a manual trigger's --conf, e.g. --conf '{"target_date": "2026-01-01"}'.
+        # Empty by default -> falls back to the day before the run. A bare ds is what gives that: ds is
+        # data_interval_start, not the run date, so for a daily schedule it is already yesterday.
+        # Override via a manual trigger's --conf, e.g. --conf '{"target_date": "2026-01-01"}'.
         "target_date": "",
     },
 ) as dag:
@@ -34,7 +34,7 @@ with DAG(
             "--dataset",
             "govuk_instagram",
             "--target-date",
-            "{{ params.target_date or macros.ds_add(ds, -1) }}",
+            "{{ params.target_date or ds }}",
         ],
         get_logs=True,
         is_delete_operator_pod=True,

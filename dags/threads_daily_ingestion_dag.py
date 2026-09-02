@@ -20,8 +20,10 @@ with DAG(
     },
     tags=["social", "threads"],
     params={
-        # Empty by default -> falls back to two calendar days before the run, matching facebook,
-        # instagram and the youtube daily reports so one night's runs all land on the same partition.
+        # Empty by default -> falls back to the day before the run, matching facebook and instagram.
+        # A bare ds is what gives that: ds is data_interval_start, not the run date, so for a daily
+        # schedule it is already yesterday. The youtube daily reports deliberately sit a further day
+        # back, so they do not share this partition date.
         # Override via a manual trigger's --conf, e.g. --conf '{"target_date": "2026-01-01"}'.
         # A date outside the rolling 730-day retention window is refused by threads/api.py._to_unix
         # before any request is made.
@@ -41,7 +43,7 @@ with DAG(
             "--dataset",
             "govuk_threads",
             "--target-date",
-            "{{ params.target_date or macros.ds_add(ds, -1) }}",
+            "{{ params.target_date or ds }}",
         ],
         get_logs=True,
         is_delete_operator_pod=True,

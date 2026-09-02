@@ -23,8 +23,10 @@ with DAG(
     tags=["social", "youtube"],
     params={
         # Empty by default -> falls back to two calendar days before the run: ds is data_interval_start,
-        # which for a daily schedule is already the day before the run, and the template takes one more
-        # off. Override via a manual trigger's --conf, e.g.
+        # which for a daily schedule is already the day before the run, and ds_add takes one more off.
+        # That second day back is deliberate and specific to YouTube: Analytics figures for the
+        # previous day are still settling. Facebook, Instagram and Threads daily use a bare ds and so
+        # sit one day ahead of this. Override via a manual trigger's --conf, e.g.
         # --conf '{"start_date": "2026-01-01", "end_date": "2026-01-01"}'.
         "start_date": "",
         "end_date": "",

@@ -17,10 +17,12 @@ with DAG(
     },
     tags=["social", "facebook"],
     params={
-        # Empty by default -> falls back to two calendar days before the run: ds is data_interval_start,
-        # which for a daily schedule is already the day before the run, and the template takes one more
-        # off. Override via a manual trigger's --conf, e.g.
+        # Empty by default -> falls back to the day before the run. A bare ds is what gives that: ds is
+        # data_interval_start, not the run date, so for a daily schedule it is already yesterday.
+        # Override via a manual trigger's --conf, e.g.
         # --conf '{"start_date": "2026-01-01", "end_date": "2026-01-01"}'.
+        # Both must resolve to the same day: facebook/main.py partitions on --start-date and uses
+        # --end-date only as the insights `until`, so a mismatch widens the window silently.
         "start_date": "",
         "end_date": "",
     },
@@ -36,9 +38,9 @@ with DAG(
             "--dataset",
             "govuk_facebook",
             "--start-date",
-            "{{ params.start_date or macros.ds_add(ds, -1) }}",
+            "{{ params.start_date or ds }}",
             "--end-date",
-            "{{ params.end_date or macros.ds_add(ds, -1) }}",
+            "{{ params.end_date or ds }}",
         ],
         get_logs=True,
         is_delete_operator_pod=True,
