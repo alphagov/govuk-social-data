@@ -23,6 +23,25 @@ Credentials are read from GCP Secret Manager (project `gds-social-data`):
 
 Unlike the Facebook token, the Instagram token is stored as a raw string. `build_client()` calls `.strip()` before use to remove any trailing whitespace from Secret Manager.
 
+Example cli to generate new tokens 
+```bash
+# 1) Exchange short lived for long lived (skipped step one and url 
+
+redirect does not work with webapps)
+instagram_app_secret=$(gcloud secrets versions access latest --secret="instagram_app_secret")
+instagram_app_id=$(gcloud secrets versions access latest --secret="instagram_app_id")   
+
+curl -G "https://graph.facebook.com/v24.0/oauth/access_token" \
+  -d "grant_type=fb_exchange_token" \
+  -d "client_id=${instagram_app_id}" \
+  -d "client_secret=${instagram_app_secret}" \
+  -d "fb_exchange_token=${SHORT_LIVED_USER_TOKEN}"
+
+# 2) Exchange long lived for page
+curl -G "https://graph.facebook.com/v24.0/me/accounts" \
+  -d "fields=id,name,access_token,category,tasks" \
+  -d "access_token=${LONG_LIVED_USER_TOKEN}"
+```
 ## API base URL
 
 ```
