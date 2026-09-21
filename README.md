@@ -106,16 +106,20 @@ For the project gds-social-data it gives editor, which includes the rquired perm
 This helper function exists to check if a youtube video id is a short or a long
 
 Endpoint: https://console.cloud.google.com/run/detail/europe-west2/bq-youtube-short-or-long/source?project=gds-social-data
+
 Connector: yt-short-checker-conn projects/gds-social-data/locations/europe-west2/connections/yt-short-checker-conn
+
 connector service account:bqcx-1031179907628-b88w@gcp-sa-bigquery-condel.iam.gserviceaccount.com
+
 BQ routine: bq_youtube_short_or_long https://console.cloud.google.com/bigquery?project=gds-social-data&ws=!1m6!1m5!6m3!1sgds-social-data!2sdataform_youtube_processing!3sbq_youtube_short_or_long!23sTREE_NODE_SELECTION
 BQ routine source code: 
+
 ```
 CREATE OR REPLACE FUNCTION
 	`gds-social-data.dataform_youtube_processing.bq_youtube_short_or_long`(video_id STRING) RETURNS STRING
 REMOTE WITH CONNECTION `gds-social-data.europe-west2.yt-short-checker-conn`
 OPTIONS (endpoint = 'https://bq-youtube-short-or-long-1031179907628.europe-west2.run.app', max_batching_rows = 10);
-
+```
 Cloud Function configuration 
 
 Startup CPU boost: Enabled
@@ -123,6 +127,7 @@ Concurrency: 8
 Request timeout: 300 seconds
 Execution environment: Second generation
 
+Revision
 max. instances: 100
 Auto-scaling factors
 Default auto-scaling factors
@@ -183,4 +188,4 @@ def youtube_type_checker(request):
 
     return {"replies": replies}
 
-    ```
+```
