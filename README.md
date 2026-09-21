@@ -112,6 +112,7 @@ Connector: yt-short-checker-conn projects/gds-social-data/locations/europe-west2
 connector service account:bqcx-1031179907628-b88w@gcp-sa-bigquery-condel.iam.gserviceaccount.com
 
 BQ routine: bq_youtube_short_or_long https://console.cloud.google.com/bigquery?project=gds-social-data&ws=!1m6!1m5!6m3!1sgds-social-data!2sdataform_youtube_processing!3sbq_youtube_short_or_long!23sTREE_NODE_SELECTION
+
 BQ routine source code: 
 
 ```
@@ -122,25 +123,25 @@ OPTIONS (endpoint = 'https://bq-youtube-short-or-long-1031179907628.europe-west2
 ```
 Cloud Function configuration 
 
-Startup CPU boost: Enabled
-Concurrency: 8
-Request timeout: 300 seconds
-Execution environment: Second generation
+- Startup CPU boost: Enabled
+- Concurrency: 8
+- Request timeout: 300 seconds
+- Execution environment: Second generation
 
 Revision
-max. instances: 100
-Auto-scaling factors
-Default auto-scaling factors
-Image
+- max. instances: 100
+- Auto-scaling factors
+- Default auto-scaling factors
+-  Image
 europe-west2-docker.pkg.dev/gds-social-data/cloud-run-source-deploy/bq-youtube-short-or-long@sha256:2cae90ffc7190ec5b15d031eca85d6ebc85a00c8f78a24c2f0064c65314eb9c5 
-Base image
+- Base image
 europe-west2-docker.pkg.dev/serverless-runtimes/google-24/runtimes/python314 
-Base image update: Automatic
-Port: 8080
+- Base image update: Automatic
+- Port: 8080
 
 Build
-CPU limit: 1
-Memory limit: 512MiB
+- CPU limit: 1
+- Memory limit: 512MiB
 
 - requirements.txt
 functions-framework==3.*
