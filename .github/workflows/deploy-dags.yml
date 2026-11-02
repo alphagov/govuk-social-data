@@ -31,4 +31,4 @@ jobs:
 
       - name: Deploy DAGs
         run: |
-          gcloud storage rsync dags/ "${GCS_DAGS_BUCKET}/dags" --recursive
+          gcloud storage rsync dags/ "${GCS_DAGS_BUCKET}/dags/" --recursive
