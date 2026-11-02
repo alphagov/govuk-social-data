@@ -4,7 +4,7 @@ markers = [
 ]
 
 [project]
-name = "youtube-exploration"
+name = "social-data-ingestion"
 version = "0.1.0"
 description = ""
 authors = [
@@ -21,17 +21,13 @@ dependencies = [
     "google-cloud-secret-manager (>=2.23.0,<3.0.0)",
     "pydantic (>=2.0.0,<3.0.0)",
     "requests (>=2.32.0,<3.0.0)",
-    "pytest (>=9.0.2,<10.0.0)",
-    "pytest-cov (>=7.1.0,<8.0.0)",
 ]
 
-[tool.poetry]
-package-mode = false
-
-[tool.poetry.group.dev.dependencies]
-    pre-commit = ">=4.5.1,<5.0.0"
-    pip-system-certs =">=5.3,<6.0"
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1,<5.0.0",
+    "pip-system-certs>=5.3,<6.0",
+    "pytest>=9.0.2,<10.0.0",
+    "pytest-cov>=7.1.0,<8.0.0",
+    "apache-airflow>=2.10.5",
+]

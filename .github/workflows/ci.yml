@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Fetch the code from the PR branch
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      # 2. Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      # 3. Install uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # 4. Install dependencies from uv.lock
+      - name: Install dependencies
+        run: uv sync --locked
+
+      # 5. Run the test suite
+      - name: Run tests with pytest
+        run: uv run pytest tests/ -m "not integration" -q --tb=short
+
+      # 6. Run tests with coverage
+      - name: Run tests with coverage
+        run: >
+          uv run pytest tests/
+          -m "not integration"
+          -x
+          -q
+          --cov=facebook
+          --cov=threads
+          --cov=src
+          --cov-report=html
+
+      # 7. Write coverage to job summary
+      - name: Write coverage to job summary
+        run: |
+          echo "## Coverage Report" >> "$GITHUB_STEP_SUMMARY"
+          uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      # 8. Upload HTML coverage report
+      - name: Upload HTML coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-report
+          path: htmlcov/
+
+      # 9. Add download information to job summary
+      - name: Add artifact link to summary
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### HTML Coverage Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download the full HTML report from the **Artifacts** section at the bottom of this Actions run page." >> "$GITHUB_STEP_SUMMARY"
