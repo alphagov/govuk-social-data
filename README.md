@@ -1,58 +1,36 @@
-# Set up 
-1) Ensure you are part of the gcp-data-infrastructure-editors@digital.cabinet-office.gov.uk
+# Development
 
-2) Sensure you have set you local gcloud config to gds-social-data project. you can set and check with `gcloud config get project` and `gcloud config set project gds-social-data`
+## Prerequisites
+1. Ensure you are part of the `gcp-data-infrastructure-editors@digital.cabinet-office.gov.uk` Google Group.
 
-3) Run `gcloud auth application-default login` to ensure you have local credentials for the scripts to execute locally
+2. Ensure you have set you local gcloud config to gds-social-data project. You can set and check with `gcloud config get project` and `gcloud config set project gds-social-data`
 
-4) Set up your local poetry env 
-```
-## Setting up the environment (Poetry-only approach)
+3. Run `gcloud auth application-default login` to ensure you have local credentials for the scripts to execute locally
 
-### Prerequisites
-- [pyenv](https://github.com/pyenv/pyenv) installed
-- [Poetry](https://python-poetry.org/) installed via pipx:
+4. Ensure you have the `uv` package manager installed via `brew install uv`.
+
+## Setup
+1.
 ```bash
-pipx install poetry
+uv sync
 ```
 
-### From scratch
-```bash
-# 1. Install Python via pyenv and set it locally
-pyenv install 3.14.3
-pyenv virtualenv 3.14.3 <environment_name>
-pyenv local <environment_name>
-
-# 2. Initialise Poetry in the project (skip if pyproject.toml already exists)
-poetry init
-
-# 3. Configure Poetry to create the .venv inside the project directory
-poetry config virtualenvs.in-project true
-
-# 4. Create the virtualenv using the pyenv-managed Python
-poetry env use $(pyenv which python)
-
-# 5. Install dependencies
-poetry install
-```
-
-
-5) Check the target datasets exist in project gds-social-data
+2. Check the target datasets exist in project gds-social-data
  - govuk_facebook
  - govuk_facebook_dev
- - govuk_instagram 
- - govuk_instagram_dev  
+ - govuk_instagram
+ - govuk_instagram_dev
  - govuk_youtube_channel
 
-6) test manual hooks 
+3. test manual hooks
 ```
 git hook run facebook-smoke-test
 git hook run instagram-smoke-tes
 ```
 
-## Pre commit hook smoke tests 
+## Pre commit hook smoke tests
 
-This is a short term fix, will move to github actions 
+This is a short term fix, will move to github actions
 
 facebook-smoke-test runs:
 
@@ -88,15 +66,15 @@ This isn't tracked in `pyproject.toml` since it's a machine-specific fix, not
 a project dependency — reinstall it if it's ever missing after a fresh
 `poetry install`.
 
-## Authentication with google groups 
+## Authentication with google groups
 
 Permissions are granted gcp-data-infrastructure-editors@digital.cabinet-office.gov.uk
 
 This gives the following permissions on the dataform custom service account custom-dataform-service-accoun@gds-social-data.iam.gserviceaccount.com
-- Service account User on the custom-dataform-service account 
-- Service account ActAs permissions 
+- Service account User on the custom-dataform-service account
+- Service account ActAs permissions
 
-For the project gds-social-data it gives editor, which includes the rquired permissions bellow: 
+For the project gds-social-data it gives editor, which includes the rquired permissions bellow:
 | roles/bigquery.dataEditor	          | Enables writing of rows to bigquery when running locally |
 | roles/bigquery.jobUser              |	Required to submit BigQuery load jobs
 | roles/secretmanager.secretAccessor  | Reads the 6 API secrets from Secret Manager |
@@ -113,7 +91,7 @@ connector service account:bqcx-1031179907628-b88w@gcp-sa-bigquery-condel.iam.gse
 
 BQ routine: bq_youtube_short_or_long https://console.cloud.google.com/bigquery?project=gds-social-data&ws=!1m6!1m5!6m3!1sgds-social-data!2sdataform_youtube_processing!3sbq_youtube_short_or_long!23sTREE_NODE_SELECTION
 
-BQ routine source code: 
+BQ routine source code:
 
 ```
 CREATE OR REPLACE FUNCTION
@@ -121,7 +99,7 @@ CREATE OR REPLACE FUNCTION
 REMOTE WITH CONNECTION `gds-social-data.europe-west2.yt-short-checker-conn`
 OPTIONS (endpoint = 'https://bq-youtube-short-or-long-1031179907628.europe-west2.run.app', max_batching_rows = 10);
 ```
-Cloud Function configuration 
+Cloud Function configuration
 
 - Startup CPU boost: Enabled
 - Concurrency: 8
@@ -133,9 +111,9 @@ Revision
 - Auto-scaling factors
 - Default auto-scaling factors
 -  Image
-europe-west2-docker.pkg.dev/gds-social-data/cloud-run-source-deploy/bq-youtube-short-or-long@sha256:2cae90ffc7190ec5b15d031eca85d6ebc85a00c8f78a24c2f0064c65314eb9c5 
+europe-west2-docker.pkg.dev/gds-social-data/cloud-run-source-deploy/bq-youtube-short-or-long@sha256:2cae90ffc7190ec5b15d031eca85d6ebc85a00c8f78a24c2f0064c65314eb9c5
 - Base image
-europe-west2-docker.pkg.dev/serverless-runtimes/google-24/runtimes/python314 
+europe-west2-docker.pkg.dev/serverless-runtimes/google-24/runtimes/python314
 - Base image update: Automatic
 - Port: 8080
 
@@ -161,13 +139,13 @@ session.mount('https://', adapter)
 def check_video(video_id):
     if not video_id:
         return None
-    
+
     url = f"https://www.youtube.com/shorts/{video_id}"
     try:
-        # HEAD request with a strict timeout to prevent one slow video from 
+        # HEAD request with a strict timeout to prevent one slow video from
         # hanging the whole BigQuery batch
         response = session.head(url, allow_redirects=False, timeout=3.5)
-        
+
         if response.status_code == 303:
             return "Long"
         elif response.status_code == 200:
@@ -181,7 +159,7 @@ def check_video(video_id):
 def youtube_type_checker(request):
     request_json = request.get_json(silent=True)
     calls = request_json.get('calls', [])
-    
+
     # Process exactly the batch BigQuery sent (ideally 50)
     with ThreadPoolExecutor(max_workers=50) as executor:
         # Maintain order for BigQuery
