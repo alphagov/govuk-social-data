@@ -1,7 +1,9 @@
-name: Build and push dev image
+name: Build and push image
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
