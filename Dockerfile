@@ -13,7 +13,7 @@ COPY . .
 FROM python:3.14.3-slim
 
 RUN groupadd --gid 999 app && \
-    useradd --system --uid 999 --gid app app
+    useradd --system --create-home --uid 999 --gid app app
 
 WORKDIR /app
 
