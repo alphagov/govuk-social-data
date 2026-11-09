@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from common.callbacks import on_failure
 from common.config import IMAGE
@@ -11,7 +12,7 @@ from common.config import IMAGE
 # Override with --conf '{"start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}'.
 with DAG(
     dag_id="youtube_ingestion",
-    schedule="0 3 * * *",
+    schedule=CronDataIntervalTimetable("0 3 * * *", timezone="UTC"),
     start_date=datetime(2026, 1, 1),
     catchup=False,
     default_args={
