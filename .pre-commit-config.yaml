@@ -9,21 +9,19 @@ repos:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
     -   id: check-yaml
+
 -   repo: https://github.com/psf/black-pre-commit-mirror
     rev: 24.1.1
     hooks:
     -   id: black
         language_version: python3.14
         args: ["--line-length=119"]
-# -   repo: https://github.com/pycqa/isort
-#     rev: 8.0.1
-#     hooks:
-#     -   id: isort
--   repo: https://github.com/pycqa/flake8
-    rev: 7.0.0
+
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.3
     hooks:
-    -   id: flake8
-        args: ["--max-line-length=119", "--extend-ignore=E203"]
+    -   id: ruff-check
+
 -   repo: local
     hooks:
     -   id: facebook-unit-tests
@@ -33,6 +31,7 @@ repos:
         stages: [pre-commit]
         pass_filenames: false
         always_run: true
+
     -   id: facebook-integrated-tests
         name: Facebook API integration (pre-push)
         language: system
@@ -40,6 +39,7 @@ repos:
         stages: [pre-push]
         pass_filenames: false
         always_run: true
+
     -   id: facebook-api-http-tests
         name: Facebook metric tests (pre-push)
         language: system
@@ -47,6 +47,7 @@ repos:
         stages: [pre-push]
         pass_filenames: false
         always_run: true
+
     -   id: facebook-smoke-test
         name: Facebook live smoke test
         language: system
@@ -61,6 +62,7 @@ repos:
             echo "PASS"'
         stages: [manual]
         pass_filenames: true
+
     -   id: threads-unit-tests
         name: Threads unit tests
         language: system
@@ -68,6 +70,7 @@ repos:
         stages: [pre-commit]
         pass_filenames: false
         always_run: true
+
     -   id: threads-integrated-tests
         name: Threads API integration (pre-push)
         language: system
@@ -75,6 +78,7 @@ repos:
         stages: [pre-push]
         pass_filenames: false
         always_run: true
+
     -   id: threads-api-http-tests
         name: Threads metric tests (pre-push)
         language: system
@@ -82,6 +86,7 @@ repos:
         stages: [pre-push]
         pass_filenames: false
         always_run: true
+
     -   id: threads-smoke-test
         name: threads live smoke test
         language: system
@@ -99,6 +104,7 @@ repos:
             echo "PASS"'
         stages: [manual]
         pass_filenames: true
+
     -   id: instagram-smoke-test
         name: instagram live smoke test
         language: system
