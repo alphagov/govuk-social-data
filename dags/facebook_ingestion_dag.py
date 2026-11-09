@@ -2,13 +2,14 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from common.callbacks import on_failure
 from common.config import IMAGE
 
 with DAG(
     dag_id="facebook_ingestion",
-    schedule="15 3 * * *",
+    schedule=CronDataIntervalTimetable("15 3 * * *", timezone="UTC"),
     start_date=datetime(2026, 1, 1),
     catchup=False,
     default_args={
