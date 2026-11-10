@@ -10,7 +10,7 @@ permissions:
   id-token: write
 
 env:
-  GCS_DAGS_BUCKET: gs://europe-west2-social-ingesti-0fc1afec-bucket
+  GCS_DAGS_BUCKET: gs://europe-west2-social-ingesti-0c6c87e0-bucket
   GCP_WORKLOAD_IDENTITY_PROVIDER: projects/1031179907628/locations/global/workloadIdentityPools/github-pool/providers/github-provider
   GCP_SERVICE_ACCOUNT: github-actions-sa@gds-social-data.iam.gserviceaccount.com
 
