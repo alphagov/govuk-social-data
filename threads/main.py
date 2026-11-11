@@ -17,6 +17,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 
 from src.bigquery_upload_helpers import upload_partitioned
+from src.logging_config import setup_logging
 from src.meta.insights import run_insight_fetch
 from threads.api import InsightMetricError, PaginationError, build_client
 from threads.schemas import (
@@ -36,7 +37,7 @@ from threads.schemas import (
     replies_to_arrow,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
