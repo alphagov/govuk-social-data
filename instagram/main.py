@@ -14,8 +14,9 @@ from instagram.schemas import (
     media_to_arrow,
 )
 from src.bigquery_upload_helpers import upload_partitioned
+from src.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
