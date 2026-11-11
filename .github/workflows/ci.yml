@@ -52,8 +52,10 @@ jobs:
           -x
           -q
           --cov=facebook
+          --cov=instagram
           --cov=threads
           --cov=src
+          --cov-report=term
           --cov-report=html
 
       # 7. Write coverage to job summary
