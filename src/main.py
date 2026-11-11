@@ -19,6 +19,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource
 
 from src.authentication import FileTokenCache, get_gcp_secret
+from src.logging_config import setup_logging
 
 from src.bigquery_upload_helpers import (  # noqa: E402
     load_data_to_bq,
@@ -946,7 +947,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Entry point: discovers video IDs, fetches metadata, and runs daily analytics reports."""
-    logging.basicConfig(level=logging.INFO)
+    setup_logging()
     args = parse_args()
     RUN_DAILY_REPORTS = args.run_daily_reports
     REFRESH_YOUTUBE_IDS_AND_METADATA = args.refresh_youtube_ids_and_metadata
