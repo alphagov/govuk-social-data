@@ -36,10 +36,11 @@ from facebook.schemas import (
 )
 from src.authentication import get_gcp_secret
 from src.bigquery_upload_helpers import upload_partitioned
+from src.logging_config import setup_logging
 from src.meta.insights import run_insight_fetch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
