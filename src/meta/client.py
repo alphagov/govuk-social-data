@@ -31,6 +31,7 @@ _fetch_insight_items re-issues an identical request when metric_names holds a si
 """
 
 import logging
+import re
 import time
 from http import HTTPStatus
 
@@ -40,6 +41,40 @@ from requests.exceptions import HTTPError
 from src.meta.errors import InsightMetricError, PaginationError
 
 logger = logging.getLogger(__name__)
+
+_ACCESS_TOKEN_PATTERN = re.compile(r"(access_token=)[^&\s'\"]+")
+
+
+def redact_token(text: str) -> str:
+    """Replace any access_token value in text, so tokens never reach logs or error messages."""
+    return _ACCESS_TOKEN_PATTERN.sub(r"\1REDACTED", text)
+
+
+def _meta_error_detail(response: requests.Response) -> str:
+    """Pull Meta's own error message out of the response body, e.g. "(#10) Application does not have permission"."""
+    try:
+        error = response.json().get("error")
+    except (ValueError, AttributeError):
+        return ""
+    if not isinstance(error, dict):
+        return ""
+    labels = [
+        str(error[key]) if key == "type" else f"{key} {error[key]}"
+        for key in ("type", "code", "error_subcode")
+        if error.get(key) is not None
+    ]
+    message = error.get("message", "")
+    return f"{message} ({', '.join(labels)})" if labels else message
+
+
+def _http_error(response: requests.Response) -> HTTPError:
+    """Build an HTTPError with Meta's error message and the access token redacted."""
+    kind = "Client" if response.status_code < 500 else "Server"
+    message = f"{response.status_code} {kind} Error: {response.reason} for url: {response.url}"
+    detail = _meta_error_detail(response)
+    if detail:
+        message = f"{message} - Meta error: {detail}"
+    return HTTPError(redact_token(message), response=response)
 
 
 class GraphClient:
@@ -71,28 +106,46 @@ class GraphClient:
             HTTPStatus.GATEWAY_TIMEOUT,
         ]
 
+        safe_path = redact_token(path)
         last_exception: Exception | None = None
         for attempt in range(retries):
             wait = 2**attempt
             try:
                 response = self._session.get(url, params=params or {}, timeout=30)
-                response.raise_for_status()
-                return response.json()
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
-                last_exception = exc
-                logger.warning("Request error for path %s, params %s, retrying in %ds: %s", path, params, wait, exc)
+                last_exception = type(exc)(redact_token(str(exc)))
+                logger.warning(
+                    "Request error for path %s, params %s, retrying in %ds: %s",
+                    safe_path,
+                    params,
+                    wait,
+                    last_exception,
+                )
                 time.sleep(wait)
-            except HTTPError as exc:
-                last_exception = exc
-                code = exc.response.status_code
-                if code == HTTPStatus.TOO_MANY_REQUESTS:
-                    logger.warning("Rate limited for path %s, params %s, waiting 60s", path, params)
-                    time.sleep(60)
-                elif code in retry_codes:
-                    logger.warning("HTTP %d for path %s, params %s, retrying in %ds", code, path, params, wait)
-                    time.sleep(wait)
-                else:
-                    raise
+                continue
+
+            if response.ok:
+                return response.json()
+
+            last_exception = _http_error(response)
+            code = response.status_code
+            if code == HTTPStatus.TOO_MANY_REQUESTS:
+                logger.warning(
+                    "Rate limited for path %s, params %s, waiting 60s: %s", safe_path, params, last_exception
+                )
+                time.sleep(60)
+            elif code in retry_codes:
+                logger.warning(
+                    "HTTP %d for path %s, params %s, retrying in %ds: %s",
+                    code,
+                    safe_path,
+                    params,
+                    wait,
+                    last_exception,
+                )
+                time.sleep(wait)
+            else:
+                raise last_exception
 
         raise last_exception
 
