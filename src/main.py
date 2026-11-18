@@ -1,32 +1,29 @@
-# -*- coding: utf-8 -*-
-
 import argparse
-import io
 import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable
+from itertools import pairwise
+from typing import Any
 
 import googleapiclient.discovery
 import pyarrow as pa
-import pyarrow.parquet as pq
 from google.auth import exceptions as auth_exceptions
 from google.auth.transport.requests import Request
-from google.cloud import bigquery
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource
+from googleapiclient.errors import HttpError
 
 from src.authentication import FileTokenCache, get_gcp_secret
-from src.logging_config import setup_logging
-
-from src.bigquery_upload_helpers import (  # noqa: E402
+from src.bigquery_upload_helpers import (
     load_data_to_bq,
     load_data_to_partitioned_bq,
     load_data_to_partitioned_bq_merge,
     retrieve_data_from_bq,
 )
+from src.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -707,7 +704,7 @@ def generate_date_ranges(start_date: str, end_date: str, days_delta: int = 7) ->
     while start_date <= end_date:
         date_ranges.append(start_date.isoformat())
         start_date += delta
-    return list(zip(date_ranges[0:-1], date_ranges[1:]))
+    return list(pairwise(date_ranges))
 
 
 def last_day_of_month(any_day):
@@ -753,22 +750,17 @@ def _run_report(
     bq_schema: dict,
     config_fn: Callable[[str], dict[str, Any]],
     label: str,
-    failures: list[str] | None = None,
-) -> pa.Table:
-    """Fetches a daily report for all videos with timing and logging."""
+) -> tuple[pa.Table, list[str]]:
+    """Fetches a daily report for all videos with timing and logging. Returns the table and the failed video IDs."""
     time_start = time.time()
-    failed_ids: list[str] = []
-    table = fetch_daily_report_for_all_videos(
+    table, failed_ids = fetch_daily_report_for_all_videos(
         youtube_service,
         video_ids,
         start_date,
         end_date,
         bq_schema,
         config_fn,
-        failed_ids=failed_ids,
     )
-    if failures is not None:
-        failures.extend(f"{label}: {video_id}" for video_id in failed_ids)
     logger.debug("%s for sample of videos:\n%s", label, table)
     logger.info(
         "Retrieved %s for %d videos: %d rows, %d failed, %.2f seconds",
@@ -778,14 +770,12 @@ def _run_report(
         len(failed_ids),
         time.time() - time_start,
     )
-    return table
+    return table, failed_ids
 
 
 def _report_with_rate_limit_retry(
     youtube_analytics_service: Resource, start_date: str, end_date: str, config: dict[str, Any]
 ) -> pa.Table:
-    from googleapiclient.errors import HttpError
-
     for wait in RATE_LIMIT_WAITS_SECONDS + [None]:
         try:
             return generic_analytics_report(
@@ -805,27 +795,26 @@ def fetch_daily_report_for_all_videos(
     end_date: str,
     bq_schema: dict,
     config_fn: Callable[[str], dict[str, Any]],
-    failed_ids: list[str] | None = None,
-) -> pa.Table:
-    """Fetches a daily analytics report for each video ID and concatenates the results into a single pa.Table."""
-    from googleapiclient.errors import HttpError
+) -> tuple[pa.Table, list[str]]:
+    """Fetches a daily analytics report for each video ID.
 
+    Returns the results concatenated into a single pa.Table, and the IDs of the videos that failed.
+    A 400 means the query itself is invalid, so the report stops and every remaining video counts as failed.
+    """
     full_schema = _with_video_id(bq_schema)
     schema = pa.schema([(k, v) for k, v in full_schema.items()])
     tables = []
-    if failed_ids is None:
-        failed_ids = []
+    failed_ids: list[str] = []
     for id in video_ids:
         logger.info("Running %s report for video %s", config_fn.__name__, id)
         try:
             table = _report_with_rate_limit_retry(youtube_analytics_service, start_date, end_date, config_fn(id))
         except HttpError as e:
             if e.resp.status == 400:
-                logger.error(
+                logger.exception(
                     "Invalid query for %s (video %s), ending this report: check the query is supported",
                     config_fn.__name__,
                     id,
-                    exc_info=True,
                 )
                 failed_ids.extend(video_ids[video_ids.index(id) :])
                 break
@@ -852,7 +841,7 @@ def fetch_daily_report_for_all_videos(
         tables.append(table)
     if failed_ids:
         logger.warning("Failed to fetch report for %d videos: %s", len(failed_ids), failed_ids)
-    return pa.concat_tables(tables) if tables else schema.empty_table()
+    return (pa.concat_tables(tables) if tables else schema.empty_table()), failed_ids
 
 
 def generic_analytics_report(
@@ -865,8 +854,6 @@ def generic_analytics_report(
         raise ValueError(f"start_date ({start_date}) must be before or equal to end_date ({end_date})")
 
     query_params: dict[str, Any] = {"ids": "channel==MINE", "startDate": start_date, "endDate": end_date, **kwargs}
-    from googleapiclient.errors import HttpError
-
     for attempt in range(max_retries):
         try:
             response = youtube_service.reports().query(**query_params).execute()
@@ -945,256 +932,212 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+TEST_DATASET = "govuk_youtube_channel_testing"
+STAGING_DATASET = "govuk_youtube_channel_staging"
+
+SAMPLE_VIDEO_IDS = [
+    "4_1gld1PIkA",
+    "ucjmWjJ25Ho",
+    "USo1yHS5th0",
+    "GY-NpWFyu8w",
+    "xUZZKi94p6Q",
+    "RqZ9e1GXJLo",
+    "hs8sykCaf3E",
+    "I5gP62TX8aQ",
+    "1whaQq44Pew",
+    "oSZPWrZDINQ",
+]
+
+# Daily reports that need no extra handling: (label, BigQuery table, schema, config function)
+SIMPLE_DAILY_REPORTS = [
+    (
+        "Playback Location",
+        "playback_location",
+        PLAYBACK_LOCATION_BQ_SCHEMA,
+        get_playback_locations_single_video_config,
+    ),
+    ("Traffic Sources", "traffic_sources", TRAFFIC_SOURCES_BQ_SCHEMA, get_traffic_sources_single_video_config),
+    (
+        "Operating System and Device",
+        "operating_system_and_device",
+        OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA,
+        get_operating_system_and_device_type_single_video_config,
+    ),
+]
+
+
+def refresh_video_ids_and_metadata(youtube_data_service: Resource, dataset: str) -> None:
+    """Reloads video_id_title_mapping and video_id_metadata_mapping from the channel's uploads."""
+    youtube_id_table = get_all_videos_for_date_range(youtube_data_service)
+    video_ids = youtube_id_table["video"].to_pylist()
+
+    logger.info("Granted scopes: %s", youtube_data_service._http.credentials.scopes)
+    logger.info("Has granted scopes: %s", youtube_data_service._http.credentials.granted_scopes)
+
+    video_ids_titles_table = get_video_titles(youtube_data_service, video_ids)
+    logger.debug("Video ID titles:\n%s", video_ids_titles_table)
+    load_data_to_bq(video_ids_titles_table, "video_id_title_mapping", dataset, VIDEO_ID_BQ_SCHEMA)
+
+    metadata_table = get_video_metadata(youtube_data_service, video_ids)
+    logger.debug("Video metadata:\n%s", metadata_table)
+    load_data_to_bq(metadata_table, "video_id_metadata_mapping", dataset, VIDEO_METADATA_BQ_SCHEMA)
+
+
+def load_video_ids(full_dataset: bool) -> tuple[list[str], str]:
+    """Returns the video IDs to report on and the dataset to load into."""
+    if full_dataset:
+        metadata_table = retrieve_data_from_bq(PROJECT_ID, STAGING_DATASET, "video_id_metadata_mapping")
+        return metadata_table["video_id"].to_pylist(), STAGING_DATASET
+    logger.info("Using hardcoded sample video IDs. Set --full-dataset to True to read video IDs from BigQuery.")
+    return list(SAMPLE_VIDEO_IDS), TEST_DATASET
+
+
+def run_daily_reports(
+    youtube_analytics_service: Resource,
+    video_ids: list[str],
+    report_date: str,
+    dataset: str,
+    full_dataset: bool,
+) -> list[str]:
+    """Runs and loads every daily report for one day. Returns the failed requests as "label: video_id"."""
+    videos_with_views = get_videos_with_views(youtube_analytics_service, report_date, report_date)
+    if not videos_with_views:
+        raise RuntimeError(
+            f"YouTube Analytics returned no video views for {report_date}. The data is probably not "
+            "available yet (it lags ~3 days); nothing was loaded."
+        )
+    if full_dataset:
+        daily_video_ids = list(videos_with_views)
+    else:
+        daily_video_ids = [video_id for video_id in video_ids if video_id in videos_with_views]
+    expected_views = sum(videos_with_views[video_id] for video_id in daily_video_ids)
+
+    failures: list[str] = []
+
+    def run(schema: dict, config_fn: Callable[[str], dict[str, Any]], label: str) -> pa.Table:
+        table, failed_ids = _run_report(
+            youtube_analytics_service, daily_video_ids, report_date, report_date, schema, config_fn, label
+        )
+        failures.extend(f"{label}: {video_id}" for video_id in failed_ids)
+        return table
+
+    # Per day because the API cannot filter by both country and date
+    user_activity_table = run(USER_ACTIVITY_BQ_SCHEMA, get_user_activity_single_video_config, "User Activity")
+    loaded_views = sum(v for v in user_activity_table["views"].to_pylist() if v is not None)
+    logger.info(
+        "User Activity views for %s: %d loaded vs %d reported by the channel's top videos report",
+        report_date,
+        loaded_views,
+        expected_views,
+    )
+    if daily_video_ids and len(user_activity_table) == 0:
+        raise RuntimeError(f"User Activity returned 0 rows for {report_date} despite {expected_views} views")
+    load_data_to_partitioned_bq(
+        user_activity_table,
+        "user_activity",
+        dataset,
+        _with_video_id(USER_ACTIVITY_BQ_SCHEMA),
+        time_partition_field="day",
+    )
+
+    country_activity_table = run(
+        _with_country(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA),
+        get_user_activity_by_country_single_video_config,
+        "User Activity By Country",
+    )
+    country_activity_table = country_activity_table.rename_columns(
+        ["country_code" if name == "country" else name for name in country_activity_table.column_names]
+    )
+    load_data_to_partitioned_bq_merge(
+        country_activity_table,
+        "user_activity_with_country",
+        dataset,
+        _with_video_id(_with_country_code(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)),
+        merge_keys=["country_code", "video_id", "day"],
+        time_partition_field="day",
+    )
+
+    for label, table_name, schema, config_fn in SIMPLE_DAILY_REPORTS:
+        table = run(schema, config_fn, label)
+        load_data_to_partitioned_bq(table, table_name, dataset, _with_video_id(schema), time_partition_field="day")
+
+    return failures
+
+
+def run_periodic_reports(
+    youtube_analytics_service: Resource, video_ids: list[str], start_date: str, end_date: str, dataset: str
+) -> list[str]:
+    """Runs and loads the monthly reports for each month. Returns the failed requests as "label: video_id"."""
+    failures: list[str] = []
+    for month_start, month_end in generate_monthly_date_ranges(start_date, end_date):
+        month_str = month_start[:7]
+        month_date = datetime.strptime(month_start, "%Y-%m-%d").date()
+        logger.info("Running periodic reports for month %s (%s to %s)", month_str, month_start, month_end)
+
+        for label, table_name, schema, config_fn in [
+            (
+                "Viewer Demographics",
+                "viewer_demographic",
+                VIEWER_DEMOGRAPHICS_BQ_SCHEMA,
+                get_viewer_demographics_config,
+            ),
+            (
+                "Engagement and Content Sharing",
+                "engagement_and_content_location",
+                ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA,
+                get_engagement_and_content_sharing_config,
+            ),
+        ]:
+            month_label = f"{label} ({month_str})"
+            table, failed_ids = _run_report(
+                youtube_analytics_service,
+                video_ids,
+                month_start,
+                month_end,
+                schema,
+                config_fn,
+                month_label,
+            )
+            failures.extend(f"{month_label}: {video_id}" for video_id in failed_ids)
+            table = table.add_column(0, "month", pa.array([month_date] * len(table), type=pa.date32()))
+            load_data_to_partitioned_bq(
+                table, table_name, dataset, _with_month(_with_video_id(schema)), time_partition_field="month"
+            )
+
+    return failures
+
+
 def main() -> None:
     """Entry point: discovers video IDs, fetches metadata, and runs daily analytics reports."""
     setup_logging()
     args = parse_args()
-    RUN_DAILY_REPORTS = args.run_daily_reports
-    REFRESH_YOUTUBE_IDS_AND_METADATA = args.refresh_youtube_ids_and_metadata
-    FULL_DATASET = args.full_dataset
-    RUN_PERIODIC_REPORTS = args.run_periodic_reports
-    START_DATE = args.start_date
-    END_DATE = args.end_date
 
-    if RUN_DAILY_REPORTS and START_DATE != END_DATE:
+    if args.run_daily_reports and args.start_date != args.end_date:
         raise ValueError(
             "Daily reports (--run-daily-reports) only support a single day - "
-            f"--start-date and --end-date must be equal (got {START_DATE} and {END_DATE})"
+            f"--start-date and --end-date must be equal (got {args.start_date} and {args.end_date})"
         )
-
-    TEST_DATASET = "govuk_youtube_channel_testing"
-    STAGING_DATASSET = "govuk_youtube_channel_staging"
-    TARGET_DATASET = STAGING_DATASSET
 
     try:
         youtube_analytics_service = get_youtube_analytics_api_v2_service()
         youtube_data_service = get_youtube_data_api_v3_service()
 
-        # Step 1: Get video IDs for the channel in the date range using Analytics API v2
-        if REFRESH_YOUTUBE_IDS_AND_METADATA and FULL_DATASET:
-            # Gated on FULL_DATASET: refreshing and loading to BigQuery is a no-op in sample mode
-            # since the hardcoded IDs are used instead of the refreshed tables.
-            youtube_id_table = get_all_videos_for_date_range(youtube_data_service)
+        # Refreshing is skipped in sample mode, which uses hardcoded IDs instead of the refreshed tables
+        if args.refresh_youtube_ids_and_metadata and args.full_dataset:
+            refresh_video_ids_and_metadata(youtube_data_service, STAGING_DATASET)
 
-            # Youtube Data API v3 functions
-            # Given video_ids, get titles
-            logger.info("Granted scopes: %s", youtube_data_service._http.credentials.scopes)
-            logger.info("Has granted scopes: %s", youtube_data_service._http.credentials.granted_scopes)
-
-            vido_ids_titles_table = get_video_titles(youtube_data_service, youtube_id_table["video"].to_pylist())
-            logger.debug("Video ID titles:\n%s", vido_ids_titles_table)
-            load_data_to_bq(vido_ids_titles_table, "video_id_title_mapping", TARGET_DATASET, VIDEO_ID_BQ_SCHEMA)
-
-            # Given video_ids, get metatdata  s
-            youtube_ids_with_metadata_mapping_table = get_video_metadata(
-                youtube_data_service, youtube_id_table["video"].to_pylist()
-            )
-            logger.debug("Video metadata:\n%s", youtube_ids_with_metadata_mapping_table)
-            load_data_to_bq(
-                youtube_ids_with_metadata_mapping_table,
-                "video_id_metadata_mapping",
-                TARGET_DATASET,
-                VIDEO_METADATA_BQ_SCHEMA,
-            )
-
-        if FULL_DATASET:
-            youtube_ids_with_metadata_mapping_table = retrieve_data_from_bq(
-                PROJECT_ID, TARGET_DATASET, "video_id_metadata_mapping"
-            )
-            TARGET_DATASET = STAGING_DATASSET
-        else:
-            logger.info(
-                "Using hardcoded sample video IDs. Set --full-dataset to True to read video IDs from BigQuery."
-            )
-            # small sample
-            youtube_ids_with_metadata_mapping_table = pa.Table.from_arrays(
-                [
-                    [
-                        "4_1gld1PIkA",
-                        "ucjmWjJ25Ho",
-                        "USo1yHS5th0",
-                        "GY-NpWFyu8w",
-                        "xUZZKi94p6Q",
-                        "RqZ9e1GXJLo",
-                        "hs8sykCaf3E",
-                        "I5gP62TX8aQ",
-                        "1whaQq44Pew",
-                        "oSZPWrZDINQ",
-                    ]
-                ],
-                names=["video_id"],
-            )
-            TARGET_DATASET = TEST_DATASET
-
-        # Daily Reports
-        video_ids = youtube_ids_with_metadata_mapping_table["video_id"].to_pylist()
+        video_ids, dataset = load_video_ids(args.full_dataset)
 
         report_failures: list[str] = []
-
-        if RUN_DAILY_REPORTS:
-            videos_with_views = get_videos_with_views(youtube_analytics_service, START_DATE, END_DATE)
-            if not videos_with_views:
-                raise RuntimeError(
-                    f"YouTube Analytics returned no video views for {START_DATE}. The data is probably not "
-                    "available yet (it lags ~3 days); nothing was loaded."
-                )
-            if FULL_DATASET:
-                daily_video_ids = list(videos_with_views)
-            else:
-                daily_video_ids = [video_id for video_id in video_ids if video_id in videos_with_views]
-            expected_views = sum(videos_with_views[video_id] for video_id in daily_video_ids)
-
-            # Youtube Analytics API v2 services
-            # This must be run per day due to being unable to filter by both country and date
-            user_activity_table = _run_report(
-                youtube_analytics_service,
-                daily_video_ids,
-                START_DATE,
-                END_DATE,
-                USER_ACTIVITY_BQ_SCHEMA,
-                get_user_activity_single_video_config,
-                "User Activity",
-                report_failures,
-            )
-            loaded_views = sum(v for v in user_activity_table["views"].to_pylist() if v is not None)
-            logger.info(
-                "User Activity views for %s: %d loaded vs %d reported by the channel's top videos report",
-                START_DATE,
-                loaded_views,
-                expected_views,
-            )
-            if daily_video_ids and len(user_activity_table) == 0:
-                raise RuntimeError(f"User Activity returned 0 rows for {START_DATE} despite {expected_views} views")
-            load_data_to_partitioned_bq(
-                user_activity_table,
-                "user_activity",
-                TARGET_DATASET,
-                _with_video_id(USER_ACTIVITY_BQ_SCHEMA),
-                time_partition_field="day",
+        if args.run_daily_reports:
+            report_failures = run_daily_reports(
+                youtube_analytics_service, video_ids, args.start_date, dataset, args.full_dataset
             )
 
-            country_activity_table = _run_report(
-                youtube_analytics_service,
-                daily_video_ids,
-                START_DATE,
-                END_DATE,
-                _with_country(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA),
-                get_user_activity_by_country_single_video_config,
-                "User Activity By Country",
-                report_failures,
+        if args.run_periodic_reports:
+            report_failures += run_periodic_reports(
+                youtube_analytics_service, video_ids, args.start_date, args.end_date, dataset
             )
-            country_activity_table = country_activity_table.rename_columns(
-                ["country_code" if name == "country" else name for name in country_activity_table.column_names]
-            )
-            load_data_to_partitioned_bq_merge(
-                country_activity_table,
-                "user_activity_with_country",
-                TARGET_DATASET,
-                _with_video_id(_with_country_code(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)),
-                merge_keys=["country_code", "video_id", "day"],
-                time_partition_field="day",
-            )
-
-            playback_location_table = _run_report(
-                youtube_analytics_service,
-                daily_video_ids,
-                START_DATE,
-                END_DATE,
-                PLAYBACK_LOCATION_BQ_SCHEMA,
-                get_playback_locations_single_video_config,
-                "Playback Location",
-                report_failures,
-            )
-            load_data_to_partitioned_bq(
-                playback_location_table,
-                "playback_location",
-                TARGET_DATASET,
-                _with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA),
-                time_partition_field="day",
-            )
-
-            traffic_sources_table = _run_report(
-                youtube_analytics_service,
-                daily_video_ids,
-                START_DATE,
-                END_DATE,
-                TRAFFIC_SOURCES_BQ_SCHEMA,
-                get_traffic_sources_single_video_config,
-                "Traffic Sources",
-                report_failures,
-            )
-            load_data_to_partitioned_bq(
-                traffic_sources_table,
-                "traffic_sources",
-                TARGET_DATASET,
-                _with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA),
-                time_partition_field="day",
-            )
-
-            operating_system_and_device_table = _run_report(
-                youtube_analytics_service,
-                daily_video_ids,
-                START_DATE,
-                END_DATE,
-                OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA,
-                get_operating_system_and_device_type_single_video_config,
-                "Operating System and Device",
-                report_failures,
-            )
-            load_data_to_partitioned_bq(
-                operating_system_and_device_table,
-                "operating_system_and_device",
-                TARGET_DATASET,
-                _with_video_id(OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA),
-                time_partition_field="day",
-            )
-
-        if RUN_PERIODIC_REPORTS:
-            monthly_ranges = generate_monthly_date_ranges(START_DATE, END_DATE)
-            for month_start, month_end in monthly_ranges:
-                month_str = month_start[:7]  # "YYYY-MM"
-                month_date = datetime.strptime(month_start, "%Y-%m-%d").date()
-                logger.info("Running periodic reports for month %s (%s to %s)", month_str, month_start, month_end)
-
-                viewer_demographic_table = _run_report(
-                    youtube_analytics_service,
-                    video_ids,
-                    month_start,
-                    month_end,
-                    VIEWER_DEMOGRAPHICS_BQ_SCHEMA,
-                    get_viewer_demographics_config,
-                    f"Viewer Demographics ({month_str})",
-                )
-                viewer_demographic_table = viewer_demographic_table.add_column(
-                    0, "month", pa.array([month_date] * len(viewer_demographic_table), type=pa.date32())
-                )
-                load_data_to_partitioned_bq(
-                    viewer_demographic_table,
-                    "viewer_demographic",
-                    TARGET_DATASET,
-                    _with_month(_with_video_id(VIEWER_DEMOGRAPHICS_BQ_SCHEMA)),
-                    time_partition_field="month",
-                )
-
-                engagement_and_content_table = _run_report(
-                    youtube_analytics_service,
-                    video_ids,
-                    month_start,
-                    month_end,
-                    ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA,
-                    get_engagement_and_content_sharing_config,
-                    f"Engagement and Content Sharing ({month_str})",
-                )
-                engagement_and_content_table = engagement_and_content_table.add_column(
-                    0, "month", pa.array([month_date] * len(engagement_and_content_table), type=pa.date32())
-                )
-                load_data_to_partitioned_bq(
-                    engagement_and_content_table,
-                    "engagement_and_content_location",
-                    TARGET_DATASET,
-                    _with_month(_with_video_id(ENGAGEMENT_AND_CONTENT_SHARING_BQ_SCHEMA)),
-                    time_partition_field="month",
-                )
 
         if report_failures:
             raise RuntimeError(
