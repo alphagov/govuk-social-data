@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 from datetime import datetime
 
 import pyarrow as pa
@@ -215,7 +213,7 @@ class TestYouTubeAPIIntegration:
     def test_run_report_user_activity(self) -> None:
         """_run_report with user_activity config returns 10 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
-        result = _run_report(
+        result, failed_ids = _run_report(
             analytics_service,
             self.SMALL_SAMPLE_VIDEO_IDS,
             "2025-01-01",
@@ -225,6 +223,7 @@ class TestYouTubeAPIIntegration:
             "User Activity",
         )
         assert isinstance(result, pa.Table)
+        assert failed_ids == []
         assert result.num_rows == 10
         expected_columns = list(_with_video_id(USER_ACTIVITY_BQ_SCHEMA).keys())
         assert result.column_names == expected_columns
@@ -233,7 +232,7 @@ class TestYouTubeAPIIntegration:
     def test_run_report_playback_details(self) -> None:
         """_run_report with playback_details config returns 10 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
-        result = _run_report(
+        result, failed_ids = _run_report(
             analytics_service,
             self.SMALL_SAMPLE_VIDEO_IDS,
             "2025-01-01",
@@ -243,6 +242,7 @@ class TestYouTubeAPIIntegration:
             "Playback Details",
         )
         assert isinstance(result, pa.Table)
+        assert failed_ids == []
         assert result.num_rows == 10
         expected_columns = list(_with_video_id(PLAYBACK_DETAILS_BQ_SCHEMA).keys())
         assert result.column_names == expected_columns
@@ -251,7 +251,7 @@ class TestYouTubeAPIIntegration:
     def test_run_report_playback_location(self) -> None:
         """_run_report with playback_location config returns 18 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
-        result = _run_report(
+        result, failed_ids = _run_report(
             analytics_service,
             self.SMALL_SAMPLE_VIDEO_IDS,
             "2025-01-01",
@@ -261,6 +261,7 @@ class TestYouTubeAPIIntegration:
             "Playback Location",
         )
         assert isinstance(result, pa.Table)
+        assert failed_ids == []
         assert result.num_rows == 18
         expected_columns = list(_with_video_id(PLAYBACK_LOCATION_BQ_SCHEMA).keys())
         assert result.column_names == expected_columns
@@ -269,7 +270,7 @@ class TestYouTubeAPIIntegration:
     def test_run_report_traffic_sources(self) -> None:
         """_run_report with traffic_sources config returns 28 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
-        result = _run_report(
+        result, failed_ids = _run_report(
             analytics_service,
             self.SMALL_SAMPLE_VIDEO_IDS,
             "2025-01-01",
@@ -279,6 +280,7 @@ class TestYouTubeAPIIntegration:
             "Traffic Sources",
         )
         assert isinstance(result, pa.Table)
+        assert failed_ids == []
         assert result.num_rows == 28
         expected_columns = list(_with_video_id(TRAFFIC_SOURCES_BQ_SCHEMA).keys())
         assert result.column_names == expected_columns
@@ -287,7 +289,7 @@ class TestYouTubeAPIIntegration:
     def test_run_report_operating_system_and_device(self) -> None:
         """_run_report with operating_system_and_device config returns 40 rows for the small sample on 2025-01-01."""
         analytics_service = get_youtube_analytics_api_v2_service()
-        result = _run_report(
+        result, failed_ids = _run_report(
             analytics_service,
             self.SMALL_SAMPLE_VIDEO_IDS,
             "2025-01-01",
@@ -297,6 +299,7 @@ class TestYouTubeAPIIntegration:
             "Operating System and Device",
         )
         assert isinstance(result, pa.Table)
+        assert failed_ids == []
         assert result.num_rows == 40
         expected_columns = list(_with_video_id(OPERATING_SYSTEM_AND_DEVICE_TYPE_BQ_SCHEMA).keys())
         assert result.column_names == expected_columns
@@ -306,7 +309,7 @@ class TestYouTubeAPIIntegration:
         """_run_report with the by-country config returns one row per (video, country) with traffic
         for the small sample on 2025-01-01, without looping over country codes."""
         analytics_service = get_youtube_analytics_api_v2_service()
-        result = _run_report(
+        result, failed_ids = _run_report(
             analytics_service,
             self.SMALL_SAMPLE_VIDEO_IDS,
             "2025-01-01",
@@ -316,6 +319,7 @@ class TestYouTubeAPIIntegration:
             "User Activity By Country",
         )
         assert isinstance(result, pa.Table)
+        assert failed_ids == []
         assert result.num_rows == 4
         expected_columns = list(_with_video_id(_with_country(USER_ACTIVITY_WITH_COUNTRY_CODE_BQ_SCHEMA)).keys())
         assert result.column_names == expected_columns
