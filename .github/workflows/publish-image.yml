@@ -41,8 +41,13 @@ jobs:
         run: |
           docker build \
             --tag "${IMAGE}:${GITHUB_SHA}" \
+            --tag "${IMAGE}:latest" \
             .
 
       - name: Push image
         run: |
           docker push "${IMAGE}:${GITHUB_SHA}"
+
+      - name: Promote image to latest
+        run: |
+          docker push "${IMAGE}:latest"
