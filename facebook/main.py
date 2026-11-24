@@ -113,6 +113,8 @@ def main() -> None:
 
     client = build_client()
     page_id = get_gcp_secret(PAGE_ID_SECRET, project_id=PROJECT_ID)
+    # Every step still runs and uploads what it got; anything recorded here fails the run at the end
+    failures: list[str] = []
 
     # Page info
     logger.info("Fetching page info...")
@@ -121,6 +123,7 @@ def main() -> None:
     except requests.exceptions.RequestException as e:
         logger.error("Failed to fetch page info: %s", e)
         page = None
+        failures.append("page info")
 
     if page is not None:
         upload_partitioned(
@@ -137,6 +140,8 @@ def main() -> None:
     # Page insights
     logger.info("Fetching page insights for %s...", args.start_date)
     page_insights = client.get_page_insights(page_id, since=args.start_date, until=args.end_date)
+    if not page_insights:
+        failures.append("page insights (none returned)")
     upload_partitioned(
         page_insights_to_arrow(page_id, page_insights),
         "facebook_page_insights",
@@ -154,6 +159,7 @@ def main() -> None:
         except PaginationError as e:
             logger.error("Post pagination failed: %s", e)
             posts = e.partial_result
+            failures.append("posts (incomplete)")
         logger.info("Found %d posts", len(posts))
         upload_partitioned(
             posts_to_arrow(posts), "facebook_posts", POSTS_SCHEMA, args.dataset, target_date, ingestion_timestamp
@@ -161,7 +167,11 @@ def main() -> None:
 
         if args.run_post_insights:
             logger.info("Fetching insights for %d posts...", len(posts))
-            posts_with_insights = run_insight_fetch(posts, client.get_post_insights, lambda p: p.post_id, "Post")
+            posts_with_insights, failed_posts = run_insight_fetch(
+                posts, client.get_post_insights, lambda p: p.post_id, "Post"
+            )
+            if failed_posts:
+                failures.append(f"post insights ({len(failed_posts)} of {len(posts)} posts)")
 
             upload_partitioned(
                 post_insights_to_arrow(posts_with_insights),
@@ -208,6 +218,7 @@ def main() -> None:
         except PaginationError as e:
             logger.error("Video pagination failed: %s", e)
             videos = e.partial_result
+            failures.append("videos (incomplete)")
         logger.info("Found %d videos", len(videos))
         upload_partitioned(
             videos_to_arrow(videos), "facebook_videos", VIDEOS_SCHEMA, args.dataset, target_date, ingestion_timestamp
@@ -215,7 +226,11 @@ def main() -> None:
 
         if args.run_video_insights:
             logger.info("Fetching insights for %d videos...", len(videos))
-            videos_with_insights = run_insight_fetch(videos, client.get_video_insights, lambda v: v.video_id, "Video")
+            videos_with_insights, failed_videos = run_insight_fetch(
+                videos, client.get_video_insights, lambda v: v.video_id, "Video"
+            )
+            if failed_videos:
+                failures.append(f"video insights ({len(failed_videos)} of {len(videos)} videos)")
 
             upload_partitioned(
                 video_insights_to_arrow(videos_with_insights),
@@ -253,6 +268,10 @@ def main() -> None:
             logger.info("Skipping video insights (--no-run-video-insights)")
     else:
         logger.info("Skipping all video data (--no-run-video-data)")
+
+    if failures:
+        logger.error("Run incomplete, missing or partial data for: %s", "; ".join(failures))
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
