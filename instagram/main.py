@@ -2,6 +2,8 @@ import argparse
 import logging
 from datetime import date, datetime, timedelta, timezone
 
+import requests
+
 from instagram.api import ACCOUNT_DAY_METRICS, ACCOUNT_TOTAL_VALUE_METRICS, MEDIA_LIFETIME_METRICS, build_client
 from instagram.schemas import (
     ACCOUNT_INSIGHTS_SCHEMA,
@@ -105,9 +107,15 @@ def main() -> None:
     if args.run_media_insights:
         logger.info("Fetching insights for %d media items...", len(media))
         media_with_insights = []
+        failed_ids = []
         for i, m in enumerate(media, start=1):
             logger.info("Media %d/%d: %s", i, len(media), m.id)
-            media_with_insights.append(client.get_media_insights(m, MEDIA_LIFETIME_METRICS))
+            try:
+                media_with_insights.append(client.get_media_insights(m, MEDIA_LIFETIME_METRICS))
+            except requests.RequestException as e:
+                logger.error("Could not fetch insights for media %s: %s", m.id, e)
+                media_with_insights.append(m)
+                failed_ids.append(m.id)
 
         # upload_partitioned already no-ops on an empty table.
         upload_partitioned(
@@ -118,6 +126,10 @@ def main() -> None:
             target_date,
             ingestion_timestamp,
         )
+        # Uploaded first so the posts that worked are kept, then failed so the gap shows in Airflow
+        if failed_ids:
+            logger.error("Run incomplete: insights failed for %d of %d media items", len(failed_ids), len(media))
+            raise SystemExit(1)
     else:
         logger.info("Skipping media insights (--no-run-media-insights)")
 

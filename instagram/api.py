@@ -1,8 +1,6 @@
 import logging
 from datetime import date, timedelta
 
-import requests
-
 from instagram.models import IGAccount, IGAccountInsightMetric, IGInsightValue, IGMedia, IGMediaInsightMetric
 from src.authentication import get_gcp_secret
 from src.meta.auth import get_graph_token
@@ -171,16 +169,10 @@ class InstagramClient(GraphClient):
     ) -> IGMedia:
         if metrics is None:
             metrics = MEDIA_LIFETIME_METRICS
-        try:
-            data = self._get(
-                f"{media.id}/insights",
-                params={"metric": ",".join(metrics), "period": "lifetime"},
-            )
-        except requests.RequestException as e:
-            # This used to return [], which emitted no
-            # insight rows for this media item. Returning the un-enriched model (insights=[])
-            logger.warning("Could not fetch insights for media %s: %s", media.id, e)
-            return media
+        data = self._get(
+            f"{media.id}/insights",
+            params={"metric": ",".join(metrics), "period": "lifetime"},
+        )
         return media.model_copy(
             update={
                 "insights": [
