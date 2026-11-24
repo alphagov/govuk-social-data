@@ -17,7 +17,7 @@ from src.meta.errors import InsightMetricError
 logger = logging.getLogger(__name__)
 
 
-def run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
+def run_insight_fetch(items: list, fetch_one, get_id, label: str) -> tuple[list, list[str]]:
     """
     Runs fetch_one(item) for each item, tolerating per-metric insight failures.
 
@@ -35,11 +35,13 @@ def run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
             label: human-readable entity name for log lines, e.g. "Post" or "Video".
 
         RETURNS
-            One entry per input item, in input order. Entries are whatever fetch_one
-            returned, or the partial result when only some metrics failed, or the
-            un-enriched item when the whole request failed.
+            (results, failed_ids). results has one entry per input item, in input order:
+            whatever fetch_one returned, or the partial result when only some metrics failed,
+            or the un-enriched item when the whole request failed. failed_ids lists the items
+            that lost any insights, so the caller can fail the run instead of reporting success.
     """
     results = []
+    failed_ids: list[str] = []
     failed_metrics: dict[str, int] = {}
     for i, item in enumerate(items, start=1):
         item_id = get_id(item)
@@ -52,11 +54,13 @@ def run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
             # None in the results list, and the arrow converters dereference each entry — turning
             # a handled degradation into an AttributeError.
             results.append(e.partial_result or item)
+            failed_ids.append(item_id)
             for m in e.metrics:
                 failed_metrics[m] = failed_metrics.get(m, 0) + 1
         except requests.RequestException as e:
             logger.error("%s %s: %s", label, item_id, e)
             results.append(item)
+            failed_ids.append(item_id)
     if failed_metrics:
         logger.warning(
             "%s insight metric failures across %d item(s): %s",
@@ -64,4 +68,4 @@ def run_insight_fetch(items: list, fetch_one, get_id, label: str) -> list:
             len(items),
             ", ".join(f"{m} ({c})" for m, c in sorted(failed_metrics.items(), key=lambda kv: -kv[1])),
         )
-    return results
+    return results, failed_ids
